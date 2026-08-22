@@ -73,6 +73,18 @@ export function getFriendlyAuthErrorMessage(error: AuthError | Error | null): st
   return error.message;
 }
 
+/**
+ * Convert a File/Blob to a base64 Data URL string
+ */
+function fileToDataUrl(file: File | Blob): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = (err) => reject(err);
+    reader.readAsDataURL(file);
+  });
+}
+
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [supabaseUser, setSupabaseUser] = useState<SupabaseUser | null>(null);
   const [session, setSession] = useState<Session | null>(null);
@@ -80,7 +92,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Fetch or upsert profile in public.profiles with optimistic fallback & timeout
+  // Upload avatar to Supabase Storage with resilient fallback
+  const uploadAvatar = async (userId: string, file: File | Blob): Promise<string | null> => {
+    try {
+      const fileExt = file instanceof File ? file.name.split('.').pop() || 'jpg' : 'jpg';
+      const filePath = `${userId}/avatar-${Date.now()}.${fileExt}`;
+
+      // 1. Try Supabase Storage upload
+      const { error: uploadError } = await supabase.storage
+        .from('avatars')
+        .upload(filePath, file, { upsert: true, contentType: file.type || 'image/jpeg' });
+
+      if (!uploadError) {
+        const { data: publicUrlData } = supabase.storage
+          .from('avatars')
+          .getPublicUrl(filePath);
+
+        if (publicUrlData?.publicUrl) {
+          return publicUrlData.publicUrl;
+        }
+      } else {
+        console.warn('[GlobeTrotter] Storage upload fallback to persistent data URL:', uploadError.message);
+      }
+
+      // 2. If storage bucket not configured or returned error, convert compressed file to base64 Data URL
+      const dataUrl = await fileToDataUrl(file);
+      return dataUrl;
+    } catch (err) {
+      console.warn('[GlobeTrotter] Avatar upload exception, using data URL:', err);
+      try {
+        return await fileToDataUrl(file);
+      } catch {
+        return null;
+      }
+    }
+  };
+
+  // Fetch or upsert profile in public.profiles with optimistic fallback
   const loadProfile = useCallback(async (sbUser: SupabaseUser | null): Promise<UserProfile | null> => {
     if (!sbUser) {
       setProfile(null);
@@ -92,7 +140,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const metaFirstName = meta.first_name || '';
     const metaLastName = meta.last_name || '';
     const metaFullName = `${metaFirstName} ${metaLastName}`.trim() || meta.name || sbUser.email?.split('@')[0] || 'Traveler';
-    const metaAvatarUrl = (meta.avatar_url && !meta.avatar_url.startsWith('data:') ? meta.avatar_url : '') || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400';
+    const metaAvatarUrl = meta.avatar_url || '';
 
     const optimisticProfile: UserProfile = {
       id: sbUser.id,
@@ -129,23 +177,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       emailConfirmed: !!(sbUser.email_confirmed_at || sbUser.confirmed_at),
     };
 
-    // Set immediate state so UI is updated synchronously
+    // Set immediate state
     setProfile((prev) => prev || optimisticProfile);
     setUser((prev) => prev || optimisticUser);
 
     try {
-      // Race DB query with a 2-second timeout so slow DB queries never block the app
-      const fetchPromise = supabase
+      const { data, error } = await supabase
         .from('profiles')
         .select('*')
         .eq('id', sbUser.id)
         .maybeSingle();
-
-      const timeoutPromise = new Promise<{ data: null; error: null }>((resolve) =>
-        setTimeout(() => resolve({ data: null, error: null }), 2000)
-      );
-
-      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
 
       if (error && error.code !== 'PGRST116') {
         console.warn('[GlobeTrotter] Could not load profile from database:', error.message);
@@ -155,7 +196,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         const firstName = data.first_name || metaFirstName;
         const lastName = data.last_name || metaLastName;
         const fullName = `${firstName} ${lastName}`.trim() || metaFullName;
-        const avatarUrl = data.avatar_url || metaAvatarUrl;
+        const avatarUrl = data.avatar_url || metaAvatarUrl || '';
 
         const currentProfile: UserProfile = {
           id: sbUser.id,
@@ -229,7 +270,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     initializeAuth();
 
-    // Subscribe to auth events
     const {
       data: { subscription },
     } = supabase.auth.onAuthStateChange((_event, newSession) => {
@@ -250,32 +290,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       subscription.unsubscribe();
     };
   }, [loadProfile]);
-
-  // Upload avatar to Supabase Storage
-  const uploadAvatar = async (userId: string, file: File | Blob): Promise<string | null> => {
-    try {
-      const fileExt = file instanceof File ? file.name.split('.').pop() || 'jpg' : 'jpg';
-      const filePath = `avatars/${userId}-${Date.now()}.${fileExt}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, file, { upsert: true, contentType: file.type || 'image/jpeg' });
-
-      if (uploadError) {
-        console.warn('[GlobeTrotter] Avatar storage notice:', uploadError.message);
-        return null;
-      }
-
-      const { data: publicUrlData } = supabase.storage
-        .from('avatars')
-        .getPublicUrl(filePath);
-
-      return publicUrlData?.publicUrl || null;
-    } catch (err) {
-      console.warn('[GlobeTrotter] Avatar upload exception:', err);
-      return null;
-    }
-  };
 
   // Sign In with Supabase
   const signIn = async (email: string, password: string) => {
@@ -298,8 +312,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setSupabaseUser(data.user);
       setSession(data.session);
 
-      // Trigger profile load non-blockingly so signIn returns immediately
-      loadProfile(data.user);
+      await loadProfile(data.user);
 
       return { user: data.user, isVerified };
     } finally {
@@ -311,14 +324,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signUp = async (payload: SignupPayload) => {
     setLoading(true);
     try {
-      // CRITICAL: Never include base64 data URIs in Supabase Auth user_metadata payload
-      // because Supabase Auth enforces a 1MB request body limit (Status 413).
-      const safeAvatarUrl =
-        payload.avatarUrl && !payload.avatarUrl.startsWith('data:')
-          ? payload.avatarUrl
-          : '';
-
       const redirectUrl = `${window.location.origin}/auth/callback`;
+
       const { data, error } = await supabase.auth.signUp({
         email: payload.email.trim(),
         password: payload.password || '',
@@ -333,7 +340,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             country: payload.country?.trim() || '',
             country_id: payload.countryId || '',
             additional_info: payload.additionalInfo?.trim() || '',
-            avatar_url: safeAvatarUrl,
           },
         },
       });
@@ -344,9 +350,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const createdUser = data.user;
       const isVerified = !!(createdUser?.email_confirmed_at || createdUser?.confirmed_at);
-      let uploadedAvatarUrl = safeAvatarUrl;
+      let uploadedAvatarUrl = '';
 
-      // If user uploaded a photo file and user ID is available, upload separately to storage
+      // Upload avatar if photo was provided
       if (createdUser && payload.avatarFile) {
         const uploadedUrl = await uploadAvatar(createdUser.id, payload.avatarFile);
         if (uploadedUrl) {
@@ -374,6 +380,43 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (profileError) {
           console.warn('[GlobeTrotter] Profile insertion notice:', profileError.message);
         }
+
+        // Set optimistic profile and user state with uploaded avatar
+        const optimisticProfile: UserProfile = {
+          id: createdUser.id,
+          first_name: payload.firstName.trim(),
+          last_name: payload.lastName.trim(),
+          phone: payload.phone?.trim() || '',
+          city: payload.city?.trim() || '',
+          country: payload.country?.trim() || '',
+          additional_info: payload.additionalInfo?.trim() || '',
+          avatar_url: uploadedAvatarUrl,
+          language: 'en',
+          created_at: createdUser.created_at,
+        };
+
+        const optimisticUser: User = {
+          id: createdUser.id,
+          name: `${payload.firstName.trim()} ${payload.lastName.trim()}`.trim(),
+          firstName: payload.firstName.trim(),
+          lastName: payload.lastName.trim(),
+          email: payload.email.trim(),
+          avatarUrl: uploadedAvatarUrl,
+          phone: payload.phone?.trim() || '',
+          city: payload.city?.trim() || '',
+          cityId: payload.cityId || '',
+          country: payload.country?.trim() || '',
+          countryId: payload.countryId || '',
+          additionalInfo: payload.additionalInfo?.trim() || '',
+          language: 'en',
+          savedDestinationIds: [],
+          role: 'traveler',
+          joinedAt: createdUser.created_at,
+          emailConfirmed: isVerified,
+        };
+
+        setProfile(optimisticProfile);
+        setUser(optimisticUser);
 
         await loadProfile(createdUser);
       }

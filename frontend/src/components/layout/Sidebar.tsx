@@ -11,6 +11,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
+import { UserAvatar } from '@/components/shared/UserAvatar';
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: LayoutDashboard },
@@ -76,10 +77,11 @@ export function Sidebar() {
       <div className="px-3 py-3 border-t border-parchment-50/10 space-y-1">
         {user && (
           <div className="flex items-center gap-2.5 px-3 py-2 rounded-lg bg-parchment-50/5 mb-1">
-            <img
-              src={user.avatarUrl}
-              alt={user.name}
-              className="w-7 h-7 rounded-full object-cover border border-teal/40"
+            <UserAvatar
+              avatarUrl={user.avatarUrl}
+              name={user.name}
+              size="sm"
+              className="border border-teal/40"
             />
             <div className="flex-1 min-w-0">
               <p className="font-sans text-xs font-semibold text-parchment-50 truncate">{user.name}</p>
@@ -88,20 +90,6 @@ export function Sidebar() {
           </div>
         )}
 
-        <NavLink
-          to="/admin"
-          className={({ isActive }) =>
-            cn(
-              'flex items-center gap-3 px-3 py-2 rounded-lg font-sans text-xs font-medium transition-colors focus-ring',
-              isActive
-                ? 'bg-teal text-parchment-50'
-                : 'text-parchment-100/60 hover:bg-parchment-50/10 hover:text-parchment-100'
-            )
-          }
-        >
-          <LayoutDashboard className="w-4 h-4 shrink-0" aria-hidden />
-          Admin Dashboard
-        </NavLink>
 
         <button
           onClick={handleLogout}

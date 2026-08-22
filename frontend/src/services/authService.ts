@@ -42,6 +42,7 @@ export async function login(email: string, password: string): Promise<User> {
   const firstName = profile?.first_name || meta.first_name || '';
   const lastName = profile?.last_name || meta.last_name || '';
   const fullName = `${firstName} ${lastName}`.trim() || meta.name || data.user.email?.split('@')[0] || 'Traveler';
+  const avatarUrl = profile?.avatar_url || meta.avatar_url || '';
 
   return {
     id: data.user.id,
@@ -49,7 +50,7 @@ export async function login(email: string, password: string): Promise<User> {
     firstName,
     lastName,
     email: data.user.email || '',
-    avatarUrl: profile?.avatar_url || (meta.avatar_url && !meta.avatar_url.startsWith('data:') ? meta.avatar_url : '') || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+    avatarUrl,
     phone: profile?.phone || meta.phone || '',
     city: profile?.city || meta.city || '',
     cityId: profile?.city_id || meta.city_id || '',
@@ -78,8 +79,7 @@ export async function signup(
           password: passwordParam || '',
         };
 
-  const safeAvatarUrl =
-    data.avatarUrl && !data.avatarUrl.startsWith('data:') ? data.avatarUrl : '';
+  const safeAvatarUrl = data.avatarUrl || '';
 
   const redirectUrl = `${window.location.origin}/auth/callback`;
   const { data: authData, error } = await supabase.auth.signUp({
@@ -96,7 +96,6 @@ export async function signup(
         country: data.country || '',
         country_id: data.countryId || '',
         additional_info: data.additionalInfo || '',
-        avatar_url: safeAvatarUrl,
       },
     },
   });
@@ -132,7 +131,7 @@ export async function signup(
     firstName: data.firstName,
     lastName: data.lastName,
     email: data.email,
-    avatarUrl: safeAvatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+    avatarUrl: safeAvatarUrl,
     phone: data.phone,
     city: data.city,
     cityId: data.cityId,
@@ -180,6 +179,7 @@ export async function getCurrentUser(): Promise<User | null> {
   const firstName = profile?.first_name || meta.first_name || '';
   const lastName = profile?.last_name || meta.last_name || '';
   const fullName = `${firstName} ${lastName}`.trim() || meta.name || sbUser.email?.split('@')[0] || 'Traveler';
+  const avatarUrl = profile?.avatar_url || meta.avatar_url || '';
 
   return {
     id: sbUser.id,
@@ -187,7 +187,7 @@ export async function getCurrentUser(): Promise<User | null> {
     firstName,
     lastName,
     email: sbUser.email || '',
-    avatarUrl: profile?.avatar_url || (meta.avatar_url && !meta.avatar_url.startsWith('data:') ? meta.avatar_url : '') || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+    avatarUrl,
     phone: profile?.phone || meta.phone || '',
     city: profile?.city || meta.city || '',
     cityId: profile?.city_id || meta.city_id || '',

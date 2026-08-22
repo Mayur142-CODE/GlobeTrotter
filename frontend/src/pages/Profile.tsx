@@ -27,6 +27,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
+import { UserAvatar } from '@/components/shared/UserAvatar';
 import { useToast } from '@/hooks/use-toast';
 import { supabase } from '@/lib/supabase';
 
@@ -83,12 +84,12 @@ export default function Profile() {
     if (!file || !user) return;
 
     if (!file.type.startsWith('image/')) {
-      toast({ title: 'Invalid image', description: 'Please select a JPG or PNG photo.', variant: 'error' });
+      toast({ title: 'Invalid image', description: 'Please select a JPG, PNG, or WebP photo.', variant: 'error' });
       return;
     }
 
-    if (file.size > 5 * 1024 * 1024) {
-      toast({ title: 'File too large', description: 'Photo should be smaller than 5MB.', variant: 'error' });
+    if (file.size > 10 * 1024 * 1024) {
+      toast({ title: 'File too large', description: 'Photo should be smaller than 10MB.', variant: 'error' });
       return;
     }
 
@@ -98,15 +99,20 @@ export default function Profile() {
       if (publicUrl) {
         setAvatarUrl(publicUrl);
         // Persist avatar to profile immediately
-        await supabase
+        const { error } = await supabase
           .from('profiles')
           .update({ avatar_url: publicUrl, updated_at: new Date().toISOString() })
           .eq('id', user.id);
+
+        if (error) {
+          console.warn('[GlobeTrotter] Profile avatar update notice:', error.message);
+        }
+
         await refreshProfile();
-        toast({ title: 'Avatar updated', description: 'Profile picture saved.', variant: 'success' });
+        toast({ title: 'Avatar updated', description: 'Profile picture saved successfully.', variant: 'success' });
       }
     } catch (err: any) {
-      toast({ title: 'Upload failed', description: err?.message, variant: 'error' });
+      toast({ title: 'Upload failed', description: err?.message || 'Could not save avatar.', variant: 'error' });
     } finally {
       setUploadingPhoto(false);
     }
@@ -235,16 +241,17 @@ export default function Profile() {
         >
           <div>
             <div className="relative w-28 h-28 mx-auto mb-3">
-              <img
-                src={avatarUrl || user.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400'}
-                alt={user.name}
-                className="w-full h-full rounded-full object-cover border-4 border-teal/30 shadow-paper"
+              <UserAvatar
+                avatarUrl={avatarUrl || user.avatarUrl}
+                name={user.name}
+                size="xl"
+                className="w-full h-full border-4 border-teal/30 shadow-paper"
               />
               <button
                 type="button"
                 onClick={() => avatarInputRef.current?.click()}
                 disabled={uploadingPhoto}
-                className="absolute bottom-0 right-0 p-2 rounded-full bg-teal text-parchment-50 shadow hover:bg-teal-600 focus-ring"
+                className="absolute bottom-0 right-0 p-2 rounded-full bg-teal text-parchment-50 shadow hover:bg-teal-600 focus-ring z-10"
                 aria-label="Upload profile picture"
               >
                 {uploadingPhoto ? <Loader2 className="w-4 h-4 animate-spin" /> : <Camera className="w-4 h-4" />}

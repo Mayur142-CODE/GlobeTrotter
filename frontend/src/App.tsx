@@ -5,8 +5,12 @@ import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
 import { ToastProvider } from '@/hooks/use-toast';
 import { AuthProvider } from '@/contexts/AuthContext';
+import { AdminAuthProvider } from '@/contexts/AdminAuthContext';
 import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
+import { AdminProtectedRoute } from '@/components/admin/AdminProtectedRoute';
+import { AdminLayout } from '@/components/admin/AdminLayout';
 
+// Regular Traveler Pages
 const Login = lazy(() => import('@/pages/Login'));
 const Signup = lazy(() => import('@/pages/Signup'));
 const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'));
@@ -25,7 +29,15 @@ const TripBudget = lazy(() => import('@/pages/TripBudget'));
 const TripCalendar = lazy(() => import('@/pages/TripCalendar'));
 const SharedItinerary = lazy(() => import('@/pages/SharedItinerary'));
 const Profile = lazy(() => import('@/pages/Profile'));
+
+// Admin Pages
+const AdminLogin = lazy(() => import('@/pages/AdminLogin'));
 const AdminDashboard = lazy(() => import('@/pages/AdminDashboard'));
+const ManageUsers = lazy(() => import('@/pages/admin/ManageUsers'));
+const PopularCities = lazy(() => import('@/pages/admin/PopularCities'));
+const PopularActivities = lazy(() => import('@/pages/admin/PopularActivities'));
+const UserTrends = lazy(() => import('@/pages/admin/UserTrends'));
+
 const NotFound = lazy(() => import('@/pages/NotFound'));
 
 function PageFallback() {
@@ -69,46 +81,59 @@ function PublicLayout() {
 export default function App() {
   return (
     <AuthProvider>
-      <ToastProvider>
-        <BrowserRouter>
-          <Routes>
-            {/* Public Authentication & Callback Routes */}
-            <Route element={<PublicLayout />}>
-              <Route path="/login" element={<Login />} />
-              <Route path="/signup" element={<Signup />} />
-              <Route path="/register" element={<Signup />} />
-              <Route path="/forgot-password" element={<ForgotPassword />} />
-              <Route path="/reset-password" element={<ResetPassword />} />
-              <Route path="/auth/reset-password" element={<ResetPassword />} />
-              <Route path="/verify-email" element={<VerifyEmail />} />
-              <Route path="/auth/callback" element={<AuthCallback />} />
-              <Route path="/shared/:tripId" element={<SharedItinerary />} />
-            </Route>
-
-            {/* Protected Application Routes */}
-            <Route element={<ProtectedRoute />}>
-              <Route element={<AppLayout />}>
-                <Route path="/dashboard" element={<Dashboard />} />
-                <Route path="/trips" element={<MyTrips />} />
-                <Route path="/trips/create" element={<CreateTrip />} />
-                <Route path="/trips/:tripId" element={<TripRedirect />} />
-                <Route path="/itinerary/:tripId" element={<ItineraryBuilder />} />
-                <Route path="/itinerary/:tripId/view" element={<ItineraryView />} />
-                <Route path="/search/cities" element={<CitySearch />} />
-                <Route path="/search/activities" element={<ActivitySearch />} />
-                <Route path="/trip/:tripId/budget" element={<TripBudget />} />
-                <Route path="/trip/:tripId/calendar" element={<TripCalendar />} />
-                <Route path="/profile" element={<Profile />} />
-                <Route path="/admin" element={<AdminDashboard />} />
+      <AdminAuthProvider>
+        <ToastProvider>
+          <BrowserRouter>
+            <Routes>
+              {/* Public Traveler Authentication & Callback Routes */}
+              <Route element={<PublicLayout />}>
+                <Route path="/login" element={<Login />} />
+                <Route path="/signup" element={<Signup />} />
+                <Route path="/register" element={<Signup />} />
+                <Route path="/forgot-password" element={<ForgotPassword />} />
+                <Route path="/reset-password" element={<ResetPassword />} />
+                <Route path="/auth/reset-password" element={<ResetPassword />} />
+                <Route path="/verify-email" element={<VerifyEmail />} />
+                <Route path="/auth/callback" element={<AuthCallback />} />
+                <Route path="/shared/:tripId" element={<SharedItinerary />} />
+                <Route path="/admin/login" element={<AdminLogin />} />
               </Route>
-            </Route>
 
-            {/* Default Navigation */}
-            <Route path="/" element={<Navigate to="/dashboard" replace />} />
-            <Route path="*" element={<NotFound />} />
-          </Routes>
-        </BrowserRouter>
-      </ToastProvider>
+              {/* Protected Traveler Application Routes */}
+              <Route element={<ProtectedRoute />}>
+                <Route element={<AppLayout />}>
+                  <Route path="/dashboard" element={<Dashboard />} />
+                  <Route path="/trips" element={<MyTrips />} />
+                  <Route path="/trips/create" element={<CreateTrip />} />
+                  <Route path="/trips/:tripId" element={<TripRedirect />} />
+                  <Route path="/itinerary/:tripId" element={<ItineraryBuilder />} />
+                  <Route path="/itinerary/:tripId/view" element={<ItineraryView />} />
+                  <Route path="/search/cities" element={<CitySearch />} />
+                  <Route path="/search/activities" element={<ActivitySearch />} />
+                  <Route path="/trip/:tripId/budget" element={<TripBudget />} />
+                  <Route path="/trip/:tripId/calendar" element={<TripCalendar />} />
+                  <Route path="/profile" element={<Profile />} />
+                </Route>
+              </Route>
+
+              {/* Dedicated Protected Admin Panel Routes */}
+              <Route element={<AdminProtectedRoute />}>
+                <Route element={<AdminLayout />}>
+                  <Route path="/admin" element={<AdminDashboard />} />
+                  <Route path="/admin/users" element={<ManageUsers />} />
+                  <Route path="/admin/cities" element={<PopularCities />} />
+                  <Route path="/admin/activities" element={<PopularActivities />} />
+                  <Route path="/admin/analytics" element={<UserTrends />} />
+                </Route>
+              </Route>
+
+              {/* Default Navigation */}
+              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </ToastProvider>
+      </AdminAuthProvider>
     </AuthProvider>
   );
 }
