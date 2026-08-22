@@ -1,0 +1,24 @@
+# Environment & Secrets (Crucial: never commit secrets)
+.env
+.env.*
+!.env.example
+.env.local
+.env.*.local
+*.env
+
+# Supabase CLI internal generated files / cache
+.supabase/
+.temp/
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+pnpm-debug.log*
+
+# Node / Dependency directories (if any node tools used)
+node_modules/
+
+# OS-specific files
+.DS_Store
+Thumbs.db

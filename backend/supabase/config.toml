@@ -1,0 +1,57 @@
+# Supabase local configuration for GlobeTrotter Backend
+# For details, visit: https://supabase.com/docs/guides/cli/config
+
+project_id = "globetrotter-backend"
+
+[api]
+enabled = true
+# Port to use for the local API URL (Default: 54321)
+port = 54321
+# Schemas to expose in the API
+schemas = ["public", "graphql_public"]
+# Extra schemas to add to the search_path of every request
+extra_search_path = ["public", "extensions"]
+# Maximum rows returned from a view, table, or stored procedure
+max_rows = 1000
+
+[db]
+# Port to use for the local database (Default: 54322)
+port = 54322
+# Port to use for the shadow database (Default: 54320)
+shadow_port = 54320
+# Database major version (matching Supabase PostgreSQL version)
+major_version = 15
+
+[studio]
+enabled = true
+# Port to use for Supabase Studio UI (Default: 54323)
+port = 54323
+
+[auth]
+enabled = true
+# Base URL of frontend application
+site_url = "http://localhost:5173"
+# Additional allowed redirect URLs for auth callbacks
+additional_redirect_urls = ["http://localhost:5173", "http://localhost:3000"]
+# Token expiry time in seconds (3600 = 1 hour)
+jwt_expiry = 3600
+enable_signup = true
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false
+
+[storage]
+enabled = true
+file_size_limit = "50MiB"
+
+[edge_runtime]
+enabled = true
+policy = "per_worker"
+inspector_port = 8083
+
+[analytics]
+enabled = false
+port = 54327
+vector_port = 54328
