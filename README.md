@@ -413,6 +413,38 @@ For hackathon evaluation and administrative inspection, a dedicated demo adminis
 
 ---
 
+## 🚀 Deploying to Vercel
+
+GlobeTrotter is optimized for instant deployment on [Vercel](https://vercel.com). Because the frontend application lives in `frontend/`, configure your Vercel project with the following settings:
+
+### 1. Import Repository
+1. Log in to [Vercel](https://vercel.com) and click **Add New** → **Project**.
+2. Select your `GlobeTrotter` GitHub repository.
+
+### 2. Configure Project Settings
+- **Root Directory**: Click *Edit* and select **`frontend`** *(Critical)*.
+- **Framework Preset**: **`Vite`** (Auto-detected).
+- **Build Command**: `npm run build` (Default).
+- **Output Directory**: `dist` (Default).
+- **Install Command**: `npm install` (Default).
+
+### 3. Set Environment Variables
+Under the **Environment Variables** section, add your production Supabase keys:
+
+| Name | Example Value | Description |
+| :--- | :--- | :--- |
+| `VITE_SUPABASE_URL` | `https://your-project.supabase.co` | Your Supabase Project URL |
+| `VITE_SUPABASE_ANON_KEY` | `eyJhbGci...` | Your Supabase Anon (Public) Key |
+
+### 4. Deploy & Configure Supabase Auth URLs
+1. Click **Deploy**.
+2. Once deployment completes, copy your live production domain (e.g. `https://globetrotter-app.vercel.app`).
+3. Open your [Supabase Dashboard](https://supabase.com/dashboard) → **Authentication** → **URL Configuration**:
+   - **Site URL**: `https://your-production-domain.vercel.app`
+   - **Redirect URLs**: Add `https://your-production-domain.vercel.app/**` (allows auth callbacks, email verification, and password reset redirects).
+
+---
+
 ## 🧪 Build & Verification
 
 Run these verification commands in the `frontend/` directory:
