@@ -55,8 +55,13 @@ export function getFriendlyAuthErrorMessage(error: AuthError | Error | null): st
   if (message.includes('email not confirmed')) {
     return 'Please verify your email address before continuing.';
   }
-  if (message.includes('rate limit') || message.includes('too many requests')) {
-    return 'Too many attempts. Please wait a moment before trying again.';
+  if (
+    message.includes('rate limit') ||
+    message.includes('too many requests') ||
+    message.includes('429') ||
+    message.includes('over_email_send_rate_limit')
+  ) {
+    return 'Too many sign-up attempts. Supabase free email rate limit reached. Please wait a few minutes before trying again or configure custom SMTP in Supabase.';
   }
   if (message.includes('password') && (message.includes('least 6') || message.includes('short'))) {
     return 'Password must be at least 6 characters long.';
