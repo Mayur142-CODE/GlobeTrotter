@@ -207,7 +207,42 @@ export async function createTrip(
 /**
  * Update an existing trip in Supabase.
  */
-export async function updateTrip(id: string, updates: Partial<Trip> & { budgetLimit?: number; isPublic?: boolean }): Promise<Trip | undefined> {
+export async function updateTrip(
+  id: string,
+  updates: Partial<Trip> & { budgetLimit?: number; isPublic?: boolean }
+): Promise<Trip | undefined> {
+  const currentTrip = await getTrip(id);
+  if (!currentTrip) {
+    throw new Error('Trip not found.');
+  }
+
+  // Validate dates against existing stops
+  if (updates.startDate || updates.endDate) {
+    const existingStops = currentTrip.stops || [];
+    if (existingStops.length > 0) {
+      if (updates.startDate) {
+        const firstStopArrival = existingStops[0].startDate;
+        if (updates.startDate > firstStopArrival) {
+          throw new Error(
+            `Trip start date cannot be after the arrival date of the first stop (${firstStopArrival}).`
+          );
+        }
+      }
+
+      if (updates.endDate) {
+        const maxDeparture = existingStops.reduce(
+          (max, s) => (s.endDate > max ? s.endDate : max),
+          existingStops[0].endDate
+        );
+        if (updates.endDate < maxDeparture) {
+          throw new Error(
+            `Trip end date (${updates.endDate}) cannot be before the departure date of an existing stop (${maxDeparture}). Please adjust stops first.`
+          );
+        }
+      }
+    }
+  }
+
   const payload: Record<string, unknown> = {};
   if (updates.name !== undefined) payload.name = updates.name.trim();
   if (updates.description !== undefined) payload.description = updates.description.trim();

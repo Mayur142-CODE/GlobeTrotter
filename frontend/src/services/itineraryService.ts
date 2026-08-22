@@ -2,6 +2,7 @@ import type { Stop } from '@/types/stop';
 import type { Activity } from '@/types/activity';
 import { supabase } from '@/lib/supabase';
 import { getTrip } from './tripService';
+import { addDays, diffDays, getNextStopArrival, validateNewStopDates } from '@/lib/dateSequence';
 
 export interface AddActivityOptions {
   scheduledDate?: string;
@@ -20,7 +21,7 @@ export interface UpdateActivityOptions {
 }
 
 /**
- * Fetch all stops with destinations and scheduled activities for a trip.
+ * Fetch all stops with destinations and scheduled activities for a trip, sorted by stop_order.
  */
 export async function getStops(tripId: string): Promise<Stop[]> {
   try {
@@ -36,108 +37,238 @@ export async function getStops(tripId: string): Promise<Stop[]> {
 }
 
 /**
- * Add a new stop destination to a trip.
+ * Add a new stop destination to a trip enforcing strictly continuous sequential dates.
  */
 export async function addStop(
   tripId: string,
   input: { cityId: string; startDate: string; endDate: string; notes?: string }
 ): Promise<Stop | undefined> {
-  try {
-    const { data: existingStops } = await supabase
-      .from('trip_stops')
-      .select('stop_order')
-      .eq('trip_id', tripId);
-
-    const nextOrder = (existingStops?.length || 0) + 1;
-
-    const { data, error } = await supabase
-      .from('trip_stops')
-      .insert({
-        trip_id: tripId,
-        destination_id: input.cityId,
-        stop_order: nextOrder,
-        start_date: input.startDate,
-        end_date: input.endDate,
-        notes: input.notes?.trim() || null,
-      })
-      .select(`
-        *,
-        destinations (*)
-      `)
-      .single();
-
-    if (error || !data) {
-      throw error || new Error('Failed to insert trip stop');
-    }
-
-    const dest = data.destinations || {};
-    const newStop: Stop = {
-      id: data.id,
-      tripId,
-      cityId: input.cityId,
-      city: {
-        id: dest.id || input.cityId,
-        name: dest.name || 'Destination',
-        country: dest.country || 'Country',
-        countryCode: dest.country?.slice(0, 2).toUpperCase() || 'GL',
-        region: dest.region || 'Asia',
-        imageUrl: dest.image_url || 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800',
-        costIndex: dest.cost_index || 50,
-        popularity: dest.popularity_score || 80,
-        description: dest.description || '',
-        timezone: 'UTC',
-      },
-      order: data.stop_order,
-      startDate: data.start_date,
-      endDate: data.end_date,
-      activities: [],
-      notes: data.notes || '',
-    };
-
-    return newStop;
-  } catch (err) {
-    console.error('[GlobeTrotter] addStop error:', err);
-    throw err;
+  // 1. Fetch trip and existing stops
+  const trip = await getTrip(tripId);
+  if (!trip) {
+    throw new Error('Trip not found.');
   }
+
+  const existingStops = (trip.stops || []).sort((a, b) => a.order - b.order);
+
+  // 2. Validate sequential dates
+  const validation = validateNewStopDates(
+    trip.startDate,
+    trip.endDate,
+    existingStops,
+    input.startDate,
+    input.endDate
+  );
+
+  if (!validation.valid) {
+    throw new Error(validation.error || 'Invalid stop dates.');
+  }
+
+  const nextOrder = existingStops.length + 1;
+
+  // 3. Insert into Supabase trip_stops
+  const { data, error } = await supabase
+    .from('trip_stops')
+    .insert({
+      trip_id: tripId,
+      destination_id: input.cityId,
+      stop_order: nextOrder,
+      start_date: input.startDate,
+      end_date: input.endDate,
+      notes: input.notes?.trim() || null,
+    })
+    .select(`
+      *,
+      destinations (*)
+    `)
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message || 'Failed to insert trip stop.');
+  }
+
+  const dest = data.destinations || {};
+  return {
+    id: data.id,
+    tripId,
+    cityId: input.cityId,
+    city: {
+      id: dest.id || input.cityId,
+      name: dest.name || 'Destination',
+      country: dest.country || 'Country',
+      countryCode: dest.country?.slice(0, 2).toUpperCase() || 'GL',
+      region: dest.region || 'Asia',
+      imageUrl: dest.image_url || 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800',
+      costIndex: dest.cost_index || 50,
+      popularity: dest.popularity_score || 80,
+      description: dest.description || '',
+      timezone: 'UTC',
+    },
+    order: data.stop_order,
+    startDate: data.start_date,
+    endDate: data.end_date,
+    activities: [],
+    notes: data.notes || '',
+  };
 }
 
 /**
- * Update an existing stop's dates or notes.
+ * Update an existing stop's departure date or notes and revalidate/adjust all downstream stops.
  */
 export async function updateStop(
+  tripId: string,
   stopId: string,
-  updates: { startDate?: string; endDate?: string; notes?: string }
-): Promise<boolean> {
-  const payload: Record<string, unknown> = {};
-  if (updates.startDate) payload.start_date = updates.startDate;
-  if (updates.endDate) payload.end_date = updates.endDate;
-  if (updates.notes !== undefined) payload.notes = updates.notes?.trim() || null;
+  updates: { endDate?: string; notes?: string }
+): Promise<Stop[]> {
+  const trip = await getTrip(tripId);
+  if (!trip) throw new Error('Trip not found.');
 
-  const { error } = await supabase.from('trip_stops').update(payload).eq('id', stopId);
-  if (error) throw new Error(error.message || 'Failed to update stop');
-  return true;
-}
+  const stops = (trip.stops || []).sort((a, b) => a.order - b.order);
+  const targetIndex = stops.findIndex((s) => s.id === stopId);
+  if (targetIndex === -1) throw new Error('Stop not found in trip.');
 
-/**
- * Delete a stop from a trip in Supabase.
- */
-export async function deleteStop(tripId: string, stopId: string): Promise<boolean> {
-  const { error } = await supabase.from('trip_stops').delete().eq('id', stopId);
-  if (error) {
-    throw new Error(error.message || 'Failed to delete stop');
-  }
-  return true;
-}
+  const targetStop = stops[targetIndex];
 
-/**
- * Reorder stops within a trip and persist order to Supabase.
- */
-export async function reorderStops(tripId: string, orderedStopIds: string[]): Promise<Stop[]> {
-  for (let i = 0; i < orderedStopIds.length; i++) {
+  if (updates.endDate && updates.endDate !== targetStop.endDate) {
+    const newEnd = updates.endDate;
+
+    // Validate new departure against arrival and trip end
+    if (newEnd < targetStop.startDate) {
+      throw new Error(`Departure date cannot be before arrival date (${targetStop.startDate}).`);
+    }
+    if (newEnd > trip.endDate) {
+      throw new Error(`Departure date cannot be after the trip end date (${trip.endDate}).`);
+    }
+
+    // Check downstream stops
+    let currentArrival = newEnd;
+    const downstreamUpdates: { id: string; startDate: string; endDate: string }[] = [];
+
+    for (let i = targetIndex + 1; i < stops.length; i++) {
+      const nextStop = stops[i];
+      if (currentArrival > trip.endDate) {
+        throw new Error(
+          `Departure date pushes following stop (${nextStop.city.name}) beyond the trip end date (${trip.endDate}). Please choose an earlier departure or adjust following stops.`
+        );
+      }
+
+      const stayDuration = Math.max(0, diffDays(nextStop.startDate, nextStop.endDate));
+      let nextEnd = addDays(currentArrival, stayDuration);
+      if (nextEnd > trip.endDate) {
+        nextEnd = trip.endDate;
+      }
+
+      downstreamUpdates.push({
+        id: nextStop.id,
+        startDate: currentArrival,
+        endDate: nextEnd,
+      });
+
+      currentArrival = nextEnd;
+    }
+
+    // Persist target stop update
     await supabase
       .from('trip_stops')
-      .update({ stop_order: i + 1 })
-      .eq('id', orderedStopIds[i]);
+      .update({
+        end_date: newEnd,
+        notes: updates.notes !== undefined ? updates.notes?.trim() || null : targetStop.notes || null,
+      })
+      .eq('id', stopId);
+
+    // Persist downstream stop updates
+    for (const d of downstreamUpdates) {
+      await supabase
+        .from('trip_stops')
+        .update({
+          start_date: d.startDate,
+          end_date: d.endDate,
+        })
+        .eq('id', d.id);
+    }
+  } else if (updates.notes !== undefined) {
+    await supabase
+      .from('trip_stops')
+      .update({ notes: updates.notes?.trim() || null })
+      .eq('id', stopId);
+  }
+
+  return getStops(tripId);
+}
+
+/**
+ * Delete a stop from a trip in Supabase and re-sequence remaining stops.
+ */
+export async function deleteStop(tripId: string, stopId: string): Promise<boolean> {
+  const trip = await getTrip(tripId);
+  if (!trip) throw new Error('Trip not found.');
+
+  // 1. Delete the target stop
+  const { error } = await supabase.from('trip_stops').delete().eq('id', stopId);
+  if (error) {
+    throw new Error(error.message || 'Failed to delete stop.');
+  }
+
+  // 2. Re-sequence remaining stops
+  const remainingStops = (trip.stops || [])
+    .filter((s) => s.id !== stopId)
+    .sort((a, b) => a.order - b.order);
+
+  if (remainingStops.length > 0) {
+    let currentArrival = trip.startDate;
+    for (let i = 0; i < remainingStops.length; i++) {
+      const stop = remainingStops[i];
+      const stayDuration = Math.max(0, diffDays(stop.startDate, stop.endDate));
+      let currentEnd = addDays(currentArrival, stayDuration);
+      if (currentEnd > trip.endDate) {
+        currentEnd = trip.endDate;
+      }
+
+      await supabase
+        .from('trip_stops')
+        .update({
+          stop_order: i + 1,
+          start_date: currentArrival,
+          end_date: currentEnd,
+        })
+        .eq('id', stop.id);
+
+      currentArrival = currentEnd;
+    }
+  }
+
+  return true;
+}
+
+/**
+ * Reorder stops within a trip, recalculate sequential dates, and persist to Supabase.
+ */
+export async function reorderStops(tripId: string, orderedStopIds: string[]): Promise<Stop[]> {
+  const trip = await getTrip(tripId);
+  if (!trip) throw new Error('Trip not found.');
+
+  const stopsMap = new Map((trip.stops || []).map((s) => [s.id, s]));
+  let currentArrival = trip.startDate;
+
+  for (let i = 0; i < orderedStopIds.length; i++) {
+    const id = orderedStopIds[i];
+    const originalStop = stopsMap.get(id);
+    const stayDuration = originalStop ? Math.max(0, diffDays(originalStop.startDate, originalStop.endDate)) : 2;
+    let currentEnd = addDays(currentArrival, stayDuration);
+    if (currentEnd > trip.endDate) {
+      currentEnd = trip.endDate;
+    }
+
+    await supabase
+      .from('trip_stops')
+      .update({
+        stop_order: i + 1,
+        start_date: currentArrival,
+        end_date: currentEnd,
+      })
+      .eq('id', id);
+
+    currentArrival = currentEnd;
   }
 
   return getStops(tripId);
@@ -152,7 +283,6 @@ export async function addActivityToStop(
   activity: Activity,
   options?: AddActivityOptions
 ): Promise<Stop | undefined> {
-  // 1. Get the stop to determine default date
   const { data: stopData } = await supabase
     .from('trip_stops')
     .select('start_date')
@@ -161,7 +291,6 @@ export async function addActivityToStop(
 
   const activityDate = options?.scheduledDate || stopData?.start_date || new Date().toISOString().slice(0, 10);
 
-  // 2. Determine next order
   const { data: existingActivities } = await supabase
     .from('trip_activities')
     .select('activity_order')
@@ -169,7 +298,6 @@ export async function addActivityToStop(
 
   const nextOrder = (existingActivities?.length || 0) + 1;
 
-  // 3. Insert into trip_activities
   const { error } = await supabase.from('trip_activities').insert({
     stop_id: stopId,
     activity_id: activity.id,

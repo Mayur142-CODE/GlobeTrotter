@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { GripVertical, MapPin, Calendar, Trash2, Plus } from 'lucide-react';
+import { GripVertical, MapPin, Calendar, Trash2, Plus, Pencil } from 'lucide-react';
 import type { Stop } from '@/types/stop';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -8,6 +8,7 @@ import { formatDateShort, daysBetween, formatCurrency } from '@/lib/utils';
 interface StopCardProps {
   stop: Stop;
   index: number;
+  onEdit?: () => void;
   onAddActivity?: () => void;
   onRemove?: () => void;
   onActivityRemove?: (activityId: string) => void;
@@ -19,6 +20,7 @@ interface StopCardProps {
 export function StopCard({
   stop,
   index,
+  onEdit,
   onAddActivity,
   onRemove,
   onActivityRemove,
@@ -53,17 +55,30 @@ export function StopCard({
               <span className="ticket-mono text-xs text-ink/40">STOP {String(index + 1).padStart(2, '0')}</span>
               <Badge variant="gold">{days} {days === 1 ? 'day' : 'days'}</Badge>
             </div>
-            {onRemove && (
-              <button
-                type="button"
-                onClick={onRemove}
-                className="p-1.5 rounded-lg text-ink/40 hover:text-coral hover:bg-coral/10 transition-colors focus-ring"
-                title={`Delete ${stop.city.name} stop`}
-                aria-label={`Remove ${stop.city.name} stop from itinerary`}
-              >
-                <Trash2 className="w-4 h-4" aria-hidden />
-              </button>
-            )}
+            <div className="flex items-center gap-1">
+              {onEdit && (
+                <button
+                  type="button"
+                  onClick={onEdit}
+                  className="p-1.5 rounded-lg text-ink/40 hover:text-teal hover:bg-teal/10 transition-colors focus-ring"
+                  title={`Edit ${stop.city.name} dates`}
+                  aria-label={`Edit ${stop.city.name} stop dates`}
+                >
+                  <Pencil className="w-4 h-4" aria-hidden />
+                </button>
+              )}
+              {onRemove && (
+                <button
+                  type="button"
+                  onClick={onRemove}
+                  className="p-1.5 rounded-lg text-ink/40 hover:text-coral hover:bg-coral/10 transition-colors focus-ring"
+                  title={`Delete ${stop.city.name} stop`}
+                  aria-label={`Remove ${stop.city.name} stop from itinerary`}
+                >
+                  <Trash2 className="w-4 h-4" aria-hidden />
+                </button>
+              )}
+            </div>
           </div>
           <h3 className="font-serif text-lg font-semibold text-midnight flex items-center gap-1.5">
             <MapPin className="w-4 h-4 text-teal shrink-0" aria-hidden />

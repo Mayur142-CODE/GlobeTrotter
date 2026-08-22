@@ -1,7 +1,22 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, Reorder } from 'framer-motion';
-import { PlusCircle, MapPin, Calendar, Wallet, ArrowLeft, Search, Clock, Share2, Eye, Check, Copy } from 'lucide-react';
+import {
+  PlusCircle,
+  MapPin,
+  Calendar,
+  Wallet,
+  ArrowLeft,
+  Search,
+  Clock,
+  Share2,
+  Eye,
+  Check,
+  Copy,
+  Info,
+  Lock,
+  Pencil,
+} from 'lucide-react';
 import type { Trip } from '@/types/trip';
 import type { Stop } from '@/types/stop';
 import type { City } from '@/types/city';
@@ -10,6 +25,7 @@ import { getTrip, toggleTripPublic } from '@/services/tripService';
 import {
   getStops,
   addStop,
+  updateStop,
   deleteStop,
   reorderStops,
   addActivityToStop,
@@ -17,12 +33,21 @@ import {
 } from '@/services/itineraryService';
 import { searchCities } from '@/services/citySearchService';
 import { searchActivities } from '@/services/activitySearchService';
+import { getNextStopArrival, validateNewStopDates, diffDays } from '@/lib/dateSequence';
 import { PageContainer } from '@/components/layout/PageContainer';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogContent, DialogFooter } from '@/components/ui/dialog';
+import { Textarea } from '@/components/ui/textarea';
+import {
+  Dialog,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+  DialogContent,
+  DialogFooter,
+} from '@/components/ui/dialog';
 import { StopCard } from '@/components/itinerary/StopCard';
 import { ActivityCard } from '@/components/itinerary/ActivityCard';
 import { FlightPathLine } from '@/components/itinerary/FlightPathLine';
@@ -39,7 +64,10 @@ export default function ItineraryBuilder() {
   const [trip, setTrip] = useState<Trip | null>(null);
   const [stops, setStops] = useState<Stop[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Dialog states
   const [addStopOpen, setAddStopOpen] = useState(false);
+  const [editingStop, setEditingStop] = useState<Stop | null>(null);
   const [shareOpen, setShareOpen] = useState(false);
   const [addActivityForStop, setAddActivityForStop] = useState<Stop | null>(null);
   const [copiedLink, setCopiedLink] = useState(false);
@@ -68,24 +96,64 @@ export default function ItineraryBuilder() {
     setStops(reordered);
     if (!tripId) return;
     try {
-      await reorderStops(tripId, reordered.map((s) => s.id));
-      toast({ title: 'Itinerary updated', description: 'Stop order saved.', variant: 'success' });
+      const updatedStops = await reorderStops(tripId, reordered.map((s) => s.id));
+      setStops(updatedStops);
+      toast({
+        title: 'Itinerary reordered',
+        description: 'Sequential dates recalculated and saved to Supabase.',
+        variant: 'success',
+      });
     } catch (err: any) {
-      toast({ title: 'Reorder error', description: err?.message || 'Could not save new stop order.', variant: 'error' });
+      toast({
+        title: 'Reorder error',
+        description: err?.message || 'Could not save new stop order.',
+        variant: 'error',
+      });
+      await loadTrip();
     }
   }
 
   async function handleAddStop(city: City, startDate: string, endDate: string) {
     if (!tripId) return;
     try {
-      const stop = await addStop(tripId, { cityId: city.id, startDate, endDate });
-      if (stop) {
-        setStops((prev) => [...prev, stop]);
-        toast({ title: 'Stop added', description: `${city.name} added to your itinerary.`, variant: 'success' });
+      const newStop = await addStop(tripId, { cityId: city.id, startDate, endDate });
+      if (newStop) {
+        setStops((prev) => [...prev, newStop]);
+        toast({
+          title: 'Stop added',
+          description: `${city.name} (${formatDateShort(startDate)} — ${formatDateShort(endDate)}) added to itinerary.`,
+          variant: 'success',
+        });
       }
       setAddStopOpen(false);
+      await loadTrip();
     } catch (err: any) {
-      toast({ title: 'Failed to add stop', description: err?.message || 'Error creating stop.', variant: 'error' });
+      toast({
+        title: 'Failed to add stop',
+        description: err?.message || 'Error creating stop.',
+        variant: 'error',
+      });
+    }
+  }
+
+  async function handleSaveEditedStop(stopId: string, endDate: string, notes?: string) {
+    if (!tripId) return;
+    try {
+      const updatedStops = await updateStop(tripId, stopId, { endDate, notes });
+      setStops(updatedStops);
+      setEditingStop(null);
+      toast({
+        title: 'Stop updated',
+        description: 'Dates and continuous timeline updated successfully.',
+        variant: 'success',
+      });
+      await loadTrip();
+    } catch (err: any) {
+      toast({
+        title: 'Update failed',
+        description: err?.message || 'Could not update stop dates.',
+        variant: 'error',
+      });
     }
   }
 
@@ -94,14 +162,18 @@ export default function ItineraryBuilder() {
     const stopToDelete = stops.find((s) => s.id === deletingStopId);
     try {
       await deleteStop(tripId, deletingStopId);
-      setStops((prev) => prev.filter((s) => s.id !== deletingStopId));
       toast({
         title: 'Stop removed',
-        description: stopToDelete ? `${stopToDelete.city.name} removed from trip.` : 'Stop deleted.',
+        description: stopToDelete ? `${stopToDelete.city.name} removed. Timeline re-sequenced.` : 'Stop deleted.',
         variant: 'success',
       });
+      await loadTrip();
     } catch (err: any) {
-      toast({ title: 'Delete failed', description: err?.message || 'Could not delete stop.', variant: 'error' });
+      toast({
+        title: 'Delete failed',
+        description: err?.message || 'Could not delete stop.',
+        variant: 'error',
+      });
     } finally {
       setDeletingStopId(null);
     }
@@ -264,9 +336,9 @@ export default function ItineraryBuilder() {
       {/* Flight path */}
       {stops.length > 0 && (
         <div className="boarding-pass p-6 mb-6">
-          <h2 className="font-serif text-lg font-semibold text-midnight mb-4 text-center">Flight Path & Stop Sequence</h2>
+          <h2 className="font-serif text-lg font-semibold text-midnight mb-4 text-center">Continuous Journey Route</h2>
           <FlightPathLine
-            stops={stops.map((s) => ({ id: s.id, label: s.city.name, sublabel: formatDateShort(s.startDate) }))}
+            stops={stops.map((s) => ({ id: s.id, label: s.city.name, sublabel: `${formatDateShort(s.startDate)} - ${formatDateShort(s.endDate)}` }))}
             variant="light"
           />
         </div>
@@ -275,8 +347,8 @@ export default function ItineraryBuilder() {
       {/* Stops list with Delete Stop & Delete Activity actions */}
       <div className="flex items-center justify-between mb-4">
         <div>
-          <h2 className="font-serif text-xl font-semibold text-midnight">Itinerary Stops & Scheduled Activities</h2>
-          <p className="font-sans text-xs text-ink/50">Drag stops to reorder your itinerary</p>
+          <h2 className="font-serif text-xl font-semibold text-midnight">Sequential Stops & Itinerary Timeline</h2>
+          <p className="font-sans text-xs text-ink/50">Drag stops to reorder; dates automatically update continuously</p>
         </div>
         <Button onClick={() => setAddStopOpen(true)}>
           <PlusCircle className="w-4 h-4 mr-1.5" aria-hidden /> Add Stop
@@ -287,10 +359,10 @@ export default function ItineraryBuilder() {
         <EmptyState
           icon={MapPin}
           title="No stops added yet"
-          description="Add your first city stop to build your itinerary."
+          description={`Your journey starts on ${formatDateShort(trip.startDate)}. Add your first destination.`}
           action={
             <Button onClick={() => setAddStopOpen(true)}>
-              <PlusCircle className="w-4 h-4 mr-1.5" aria-hidden /> Add your first stop
+              <PlusCircle className="w-4 h-4 mr-1.5" aria-hidden /> Add first stop
             </Button>
           }
         />
@@ -302,6 +374,7 @@ export default function ItineraryBuilder() {
                 stop={stop}
                 index={i}
                 draggable
+                onEdit={() => setEditingStop(stop)}
                 onRemove={() => setDeletingStopId(stop.id)}
                 onAddActivity={() => setAddActivityForStop(stop)}
                 onActivityRemove={(actId) => handleRemoveActivity(stop.id, actId)}
@@ -316,9 +389,22 @@ export default function ItineraryBuilder() {
         open={addStopOpen}
         tripStart={trip.startDate}
         tripEnd={trip.endDate}
+        existingStops={stops}
         onClose={() => setAddStopOpen(false)}
         onAdd={handleAddStop}
       />
+
+      {/* Edit Stop Dialog */}
+      {editingStop && (
+        <EditStopDialog
+          stop={editingStop}
+          tripStart={trip.startDate}
+          tripEnd={trip.endDate}
+          stops={stops}
+          onClose={() => setEditingStop(null)}
+          onSave={handleSaveEditedStop}
+        />
+      )}
 
       {/* Add Activity Dialog */}
       <AddActivityDialog
@@ -376,23 +462,28 @@ export default function ItineraryBuilder() {
         onClose={() => setDeletingStopId(null)}
         onConfirm={handleConfirmDeleteStop}
         title="Delete Stop?"
-        description="Are you sure you want to delete this stop and all its scheduled activities from your itinerary? This action cannot be undone."
+        description="Are you sure you want to delete this stop and all its scheduled activities from your itinerary? Following stops will automatically re-sequence."
         confirmLabel="Delete Stop"
       />
     </PageContainer>
   );
 }
 
+/**
+ * Add Stop Dialog enforcing strictly sequential timeline logic
+ */
 function AddStopDialog({
   open,
   tripStart,
   tripEnd,
+  existingStops,
   onClose,
   onAdd,
 }: {
   open: boolean;
   tripStart: string;
   tripEnd: string;
+  existingStops: Stop[];
   onClose: () => void;
   onAdd: (city: City, start: string, end: string) => void;
 }) {
@@ -400,23 +491,28 @@ function AddStopDialog({
   const [results, setResults] = useState<City[]>([]);
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<City | null>(null);
-  const [startDate, setStartDate] = useState('');
-  const [endDate, setEndDate] = useState('');
+
+  // Locked arrival date calculated automatically
+  const arrivalDate = getNextStopArrival(tripStart, existingStops);
+  const [departureDate, setDepartureDate] = useState(arrivalDate);
   const [error, setError] = useState('');
+
+  const isFirstStop = existingStops.length === 0;
+  const previousStop = existingStops.length > 0 ? existingStops[existingStops.length - 1] : null;
 
   useEffect(() => {
     if (!open) {
       setQuery('');
       setSelected(null);
-      setStartDate(tripStart);
-      setEndDate(tripEnd);
       setError('');
       setResults([]);
     } else {
-      setStartDate(tripStart);
-      setEndDate(tripEnd);
+      const nextArr = getNextStopArrival(tripStart, existingStops);
+      // Default departure date to nextArr or tripEnd
+      setDepartureDate(nextArr);
+      setError('');
     }
-  }, [open, tripStart, tripEnd]);
+  }, [open, tripStart, tripEnd, existingStops]);
 
   useEffect(() => {
     if (!query.trim()) {
@@ -435,19 +531,21 @@ function AddStopDialog({
       setError('Please select a destination city.');
       return;
     }
-    if (!startDate || !endDate) {
-      setError('Please select arrival and departure dates.');
+
+    const validation = validateNewStopDates(
+      tripStart,
+      tripEnd,
+      existingStops,
+      arrivalDate,
+      departureDate
+    );
+
+    if (!validation.valid) {
+      setError(validation.error || 'Invalid dates.');
       return;
     }
-    if (new Date(endDate) < new Date(startDate)) {
-      setError('Departure date cannot be before arrival date.');
-      return;
-    }
-    if (new Date(startDate) < new Date(tripStart) || new Date(endDate) > new Date(tripEnd)) {
-      setError(`Stop dates must be within trip range (${formatDateShort(tripStart)} — ${formatDateShort(tripEnd)}).`);
-      return;
-    }
-    onAdd(selected, startDate, endDate);
+
+    onAdd(selected, arrivalDate, departureDate);
   }
 
   return (
@@ -455,8 +553,13 @@ function AddStopDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Add a Stop</DialogTitle>
-          <DialogDescription>Search from the live database of destination cities.</DialogDescription>
+          <DialogDescription>
+            {isFirstStop
+              ? `First stop begins on trip start (${formatDateShort(tripStart)}).`
+              : `Stop continues sequentially from ${previousStop?.city.name} (${formatDateShort(arrivalDate)}).`}
+          </DialogDescription>
         </DialogHeader>
+
         <div className="space-y-4 py-2">
           {!selected ? (
             <div>
@@ -473,7 +576,7 @@ function AddStopDialog({
               </div>
               {searching && <p className="font-sans text-xs text-ink/50 mt-2">Searching cities…</p>}
               {results.length > 0 && (
-                <ul className="mt-2 border border-parchment-300 rounded-lg max-h-48 overflow-y-auto divide-y divide-parchment-200 bg-parchment-50">
+                <ul className="mt-2 border border-parchment-300 rounded-lg max-h-44 overflow-y-auto divide-y divide-parchment-200 bg-parchment-50">
                   {results.map((c) => (
                     <li key={c.id}>
                       <button
@@ -505,40 +608,184 @@ function AddStopDialog({
           )}
 
           {selected && (
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="stop-start">Arrival Date</Label>
-                <Input
-                  id="stop-start"
-                  type="date"
-                  value={startDate}
-                  min={tripStart}
-                  max={tripEnd}
-                  onChange={(e) => setStartDate(e.target.value)}
-                />
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <div className="flex items-center gap-1 mb-1">
+                    <Label htmlFor="stop-start">Arrival Date</Label>
+                    <Lock className="w-3 h-3 text-ink/40" title="Locked by sequence" />
+                  </div>
+                  <Input
+                    id="stop-start"
+                    type="date"
+                    value={arrivalDate}
+                    disabled
+                    readOnly
+                    className="bg-parchment-200/60 text-ink/80 font-mono text-xs cursor-not-allowed"
+                  />
+                  <p className="text-[10px] text-ink/50 mt-1">
+                    {isFirstStop
+                      ? 'Trip Start Date'
+                      : `From previous stop departure`}
+                  </p>
+                </div>
+                <div>
+                  <Label htmlFor="stop-end" className="mb-1 block">Departure Date</Label>
+                  <Input
+                    id="stop-end"
+                    type="date"
+                    value={departureDate}
+                    min={arrivalDate}
+                    max={tripEnd}
+                    onChange={(e) => {
+                      setDepartureDate(e.target.value);
+                      setError('');
+                    }}
+                    className="font-mono text-xs"
+                  />
+                  <p className="text-[10px] text-ink/50 mt-1">
+                    Max: {formatDateShort(tripEnd)}
+                  </p>
+                </div>
               </div>
-              <div>
-                <Label htmlFor="stop-end">Departure Date</Label>
-                <Input
-                  id="stop-end"
-                  type="date"
-                  value={endDate}
-                  min={startDate || tripStart}
-                  max={tripEnd}
-                  onChange={(e) => setEndDate(e.target.value)}
-                />
+
+              <div className="rounded-lg bg-parchment-100/70 p-2.5 border border-parchment-300/60 flex items-start gap-2 text-xs text-ink/70">
+                <Info className="w-4 h-4 text-teal shrink-0 mt-0.5" />
+                <span>
+                  Stay length:{' '}
+                  <strong>{Math.max(1, diffDays(arrivalDate, departureDate))} day(s)</strong> (
+                  {formatDateShort(arrivalDate)} to {formatDateShort(departureDate)}).
+                </span>
               </div>
             </div>
           )}
 
           {error && <p className="font-sans text-xs text-coral font-medium">{error}</p>}
         </div>
+
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
           <Button disabled={!selected} onClick={handleAdd}>
             Add Stop
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+/**
+ * Edit Stop Dialog allowing departure date adjustments with continuous timeline updates
+ */
+function EditStopDialog({
+  stop,
+  tripStart,
+  tripEnd,
+  stops,
+  onClose,
+  onSave,
+}: {
+  stop: Stop;
+  tripStart: string;
+  tripEnd: string;
+  stops: Stop[];
+  onClose: () => void;
+  onSave: (stopId: string, endDate: string, notes?: string) => void;
+}) {
+  const [departureDate, setDepartureDate] = useState(stop.endDate);
+  const [notes, setNotes] = useState(stop.notes || '');
+  const [error, setError] = useState('');
+
+  const stopIndex = stops.findIndex((s) => s.id === stop.id);
+  const isFirstStop = stopIndex === 0;
+
+  function handleSave() {
+    if (!departureDate) {
+      setError('Please select a departure date.');
+      return;
+    }
+    if (departureDate < stop.startDate) {
+      setError(`Departure date cannot be before arrival date (${formatDateShort(stop.startDate)}).`);
+      return;
+    }
+    if (departureDate > tripEnd) {
+      setError(`Departure date cannot be after trip end date (${formatDateShort(tripEnd)}).`);
+      return;
+    }
+
+    onSave(stop.id, departureDate, notes);
+  }
+
+  return (
+    <Dialog open={!!stop} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Stop: {stop.city.name}</DialogTitle>
+          <DialogDescription>
+            Modify departure date. Following stops will automatically re-sequence to maintain a continuous timeline.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="space-y-4 py-2">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <div className="flex items-center gap-1 mb-1">
+                <Label htmlFor="edit-stop-start">Arrival Date</Label>
+                <Lock className="w-3 h-3 text-ink/40" />
+              </div>
+              <Input
+                id="edit-stop-start"
+                type="date"
+                value={stop.startDate}
+                disabled
+                readOnly
+                className="bg-parchment-200/60 text-ink/80 font-mono text-xs cursor-not-allowed"
+              />
+              <p className="text-[10px] text-ink/50 mt-1">
+                {isFirstStop ? 'Trip Start Date' : 'From previous stop'}
+              </p>
+            </div>
+            <div>
+              <Label htmlFor="edit-stop-end" className="mb-1 block">Departure Date</Label>
+              <Input
+                id="edit-stop-end"
+                type="date"
+                value={departureDate}
+                min={stop.startDate}
+                max={tripEnd}
+                onChange={(e) => {
+                  setDepartureDate(e.target.value);
+                  setError('');
+                }}
+                className="font-mono text-xs"
+              />
+              <p className="text-[10px] text-ink/50 mt-1">Max: {formatDateShort(tripEnd)}</p>
+            </div>
+          </div>
+
+          <div>
+            <Label htmlFor="edit-stop-notes">Stop Notes / Accommodation</Label>
+            <Textarea
+              id="edit-stop-notes"
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+              placeholder="e.g. Hotel reservation, neighborhoods to explore…"
+              rows={3}
+              className="mt-1"
+            />
+          </div>
+
+          {error && <p className="font-sans text-xs text-coral font-medium">{error}</p>}
+        </div>
+
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button onClick={handleSave}>
+            Save Changes
           </Button>
         </DialogFooter>
       </DialogContent>
