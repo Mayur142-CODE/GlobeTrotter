@@ -1,0 +1,20 @@
+# Root Git Ignore
+.env
+.env.*
+!.env.example
+*.env
+.env.local
+.env.*.local
+frontend/.env.local
+backend/.env
+
+# Supabase CLI
+.supabase/
+
+# Dependencies & Build outputs
+node_modules/
+dist/
+build/
+.DS_Store
+Thumbs.db
+*.log
