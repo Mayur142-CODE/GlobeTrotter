@@ -11,8 +11,49 @@ export async function login(email: string, _password: string): Promise<User> {
   return delay({ ...mockUser, email: email || mockUser.email });
 }
 
-export async function signup(name: string, email: string, _password: string): Promise<User> {
-  return delay({ ...mockUser, name: name || mockUser.name, email: email || mockUser.email });
+export interface SignupData {
+  name?: string;
+  firstName?: string;
+  lastName?: string;
+  email: string;
+  password?: string;
+  phone?: string;
+  city?: string;
+  country?: string;
+  additionalInfo?: string;
+  avatarUrl?: string;
+}
+
+export async function signup(
+  nameOrData: string | SignupData,
+  email?: string,
+  _password?: string
+): Promise<User> {
+  if (typeof nameOrData === 'object') {
+    const fullName = nameOrData.name || `${nameOrData.firstName || ''} ${nameOrData.lastName || ''}`.trim() || mockUser.name;
+    const userUpdates: User = {
+      ...mockUser,
+      name: fullName,
+      firstName: nameOrData.firstName,
+      lastName: nameOrData.lastName,
+      email: nameOrData.email || mockUser.email,
+      phone: nameOrData.phone,
+      city: nameOrData.city,
+      country: nameOrData.country,
+      additionalInfo: nameOrData.additionalInfo,
+      avatarUrl: nameOrData.avatarUrl || mockUser.avatarUrl,
+    };
+    Object.assign(mockUser, userUpdates);
+    return delay(userUpdates);
+  }
+  const fullName = nameOrData || mockUser.name;
+  const userUpdates: User = {
+    ...mockUser,
+    name: fullName,
+    email: email || mockUser.email,
+  };
+  Object.assign(mockUser, userUpdates);
+  return delay(userUpdates);
 }
 
 export async function forgotPassword(_email: string): Promise<{ success: boolean; message: string }> {
