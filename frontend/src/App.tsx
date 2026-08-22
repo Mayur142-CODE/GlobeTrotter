@@ -1,5 +1,5 @@
 import { Suspense, lazy } from 'react';
-import { BrowserRouter, Routes, Route, Outlet, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Outlet, Navigate, useParams } from 'react-router-dom';
 import { Sidebar } from '@/components/layout/Sidebar';
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
@@ -34,6 +34,11 @@ function PageFallback() {
       <div className="w-8 h-8 border-2 border-teal border-t-transparent rounded-full animate-spin" />
     </div>
   );
+}
+
+function TripRedirect() {
+  const { tripId } = useParams();
+  return <Navigate to={`/itinerary/${tripId}/view`} replace />;
 }
 
 function AppLayout() {
@@ -86,6 +91,7 @@ export default function App() {
                 <Route path="/dashboard" element={<Dashboard />} />
                 <Route path="/trips" element={<MyTrips />} />
                 <Route path="/trips/create" element={<CreateTrip />} />
+                <Route path="/trips/:tripId" element={<TripRedirect />} />
                 <Route path="/itinerary/:tripId" element={<ItineraryBuilder />} />
                 <Route path="/itinerary/:tripId/view" element={<ItineraryView />} />
                 <Route path="/search/cities" element={<CitySearch />} />

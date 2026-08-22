@@ -1,12 +1,12 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion, Reorder } from 'framer-motion';
-import { PlusCircle, MapPin, Calendar, Wallet, ArrowLeft, Search, Clock } from 'lucide-react';
+import { PlusCircle, MapPin, Calendar, Wallet, ArrowLeft, Search, Clock, Share2, Eye, Check, Copy } from 'lucide-react';
 import type { Trip } from '@/types/trip';
 import type { Stop } from '@/types/stop';
 import type { City } from '@/types/city';
 import type { Activity } from '@/types/activity';
-import { getTrip } from '@/services/tripService';
+import { getTrip, toggleTripPublic } from '@/services/tripService';
 import {
   getStops,
   addStop,
@@ -40,17 +40,24 @@ export default function ItineraryBuilder() {
   const [stops, setStops] = useState<Stop[]>([]);
   const [loading, setLoading] = useState(true);
   const [addStopOpen, setAddStopOpen] = useState(false);
+  const [shareOpen, setShareOpen] = useState(false);
   const [addActivityForStop, setAddActivityForStop] = useState<Stop | null>(null);
+  const [copiedLink, setCopiedLink] = useState(false);
 
   // Stop delete confirm state
   const [deletingStopId, setDeletingStopId] = useState<string | null>(null);
 
   const loadTrip = useCallback(async () => {
     if (!tripId) return;
-    const [t, s] = await Promise.all([getTrip(tripId), getStops(tripId)]);
-    setTrip(t ?? null);
-    setStops(s);
-    setLoading(false);
+    try {
+      const [t, s] = await Promise.all([getTrip(tripId), getStops(tripId)]);
+      setTrip(t ?? null);
+      setStops(s);
+    } catch (err: any) {
+      console.warn('[GlobeTrotter] loadTrip error:', err);
+    } finally {
+      setLoading(false);
+    }
   }, [tripId]);
 
   useEffect(() => {
@@ -60,18 +67,26 @@ export default function ItineraryBuilder() {
   async function handleReorder(reordered: Stop[]) {
     setStops(reordered);
     if (!tripId) return;
-    await reorderStops(tripId, reordered.map((s) => s.id));
-    toast({ title: 'Itinerary updated', description: 'Stop order saved.', variant: 'success' });
+    try {
+      await reorderStops(tripId, reordered.map((s) => s.id));
+      toast({ title: 'Itinerary updated', description: 'Stop order saved.', variant: 'success' });
+    } catch (err: any) {
+      toast({ title: 'Reorder error', description: err?.message || 'Could not save new stop order.', variant: 'error' });
+    }
   }
 
   async function handleAddStop(city: City, startDate: string, endDate: string) {
     if (!tripId) return;
-    const stop = await addStop(tripId, { cityId: city.id, startDate, endDate });
-    if (stop) {
-      setStops((prev) => [...prev, stop]);
-      toast({ title: 'Stop added', description: `${city.name} added to your itinerary.`, variant: 'success' });
+    try {
+      const stop = await addStop(tripId, { cityId: city.id, startDate, endDate });
+      if (stop) {
+        setStops((prev) => [...prev, stop]);
+        toast({ title: 'Stop added', description: `${city.name} added to your itinerary.`, variant: 'success' });
+      }
+      setAddStopOpen(false);
+    } catch (err: any) {
+      toast({ title: 'Failed to add stop', description: err?.message || 'Error creating stop.', variant: 'error' });
     }
-    setAddStopOpen(false);
   }
 
   async function handleConfirmDeleteStop() {
@@ -94,10 +109,17 @@ export default function ItineraryBuilder() {
 
   async function handleAddActivity(activity: Activity, stop: Stop) {
     if (!tripId) return;
-    const updated = await addActivityToStop(tripId, stop.id, activity);
-    if (updated) {
-      setStops((prev) => prev.map((s) => (s.id === stop.id ? updated : s)));
-      toast({ title: 'Activity added', description: `${activity.name} added to ${stop.city.name}.`, variant: 'success' });
+    try {
+      const updated = await addActivityToStop(tripId, stop.id, activity, {
+        scheduledDate: stop.startDate,
+        customCost: activity.price,
+      });
+      if (updated) {
+        setStops((prev) => prev.map((s) => (s.id === stop.id ? updated : s)));
+        toast({ title: 'Activity added', description: `${activity.name} added to ${stop.city.name}.`, variant: 'success' });
+      }
+    } catch (err: any) {
+      toast({ title: 'Error adding activity', description: err?.message || 'Could not add activity.', variant: 'error' });
     }
   }
 
@@ -106,14 +128,46 @@ export default function ItineraryBuilder() {
     const stop = stops.find((s) => s.id === stopId);
     if (!stop) return;
     const act = stop.activities.find((a) => a.id === activityId);
-    const updated = await removeActivityFromStop(tripId, stopId, activityId);
-    if (updated) {
-      setStops((prev) => prev.map((s) => (s.id === stopId ? updated : s)));
-      toast({
-        title: 'Activity removed',
-        description: act ? `${act.name} removed from ${stop.city.name}.` : 'Activity removed.',
-        variant: 'success',
-      });
+    try {
+      const updated = await removeActivityFromStop(tripId, stopId, activityId);
+      if (updated) {
+        setStops((prev) => prev.map((s) => (s.id === stopId ? updated : s)));
+        toast({
+          title: 'Activity removed',
+          description: act ? `${act.name} removed from ${stop.city.name}.` : 'Activity removed.',
+          variant: 'success',
+        });
+      }
+    } catch (err: any) {
+      toast({ title: 'Error removing activity', description: err?.message || 'Could not remove activity.', variant: 'error' });
+    }
+  }
+
+  async function handleTogglePublic(isPublic: boolean) {
+    if (!tripId) return;
+    try {
+      const updated = await toggleTripPublic(tripId, isPublic);
+      if (updated) {
+        setTrip(updated);
+        toast({
+          title: isPublic ? 'Trip is now public' : 'Trip is now private',
+          description: isPublic ? 'Anyone with your link can view this itinerary.' : 'Only you can view this trip.',
+          variant: 'success',
+        });
+      }
+    } catch (err: any) {
+      toast({ title: 'Sharing update failed', description: err?.message, variant: 'error' });
+    }
+  }
+
+  const shareUrl = `${window.location.origin}/shared/${tripId}`;
+
+  function handleCopyShareLink() {
+    if (navigator.clipboard) {
+      navigator.clipboard.writeText(shareUrl);
+      setCopiedLink(true);
+      toast({ title: 'Link copied!', description: 'Public share link copied to clipboard.', variant: 'success' });
+      setTimeout(() => setCopiedLink(false), 3000);
     }
   }
 
@@ -135,31 +189,40 @@ export default function ItineraryBuilder() {
       <PageContainer>
         <EmptyState
           title="Trip not found"
-          description="This trip may have been deleted."
+          description="This trip could not be loaded or may have been deleted."
           action={<Button onClick={() => navigate('/trips')}>Back to My Trips</Button>}
         />
       </PageContainer>
     );
   }
 
-  const days = daysBetween(trip.startDate, trip.endDate);
+  const days = Math.max(1, daysBetween(trip.startDate, trip.endDate));
   const totalCost = trip.budget.total;
 
   return (
     <PageContainer>
-      <div className="flex items-center justify-between mb-4">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
         <button
           onClick={() => navigate('/trips')}
           className="flex items-center gap-1.5 font-sans text-sm text-ink/60 hover:text-teal focus-ring rounded"
         >
           <ArrowLeft className="w-4 h-4" aria-hidden /> Back to trips
         </button>
-        <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={() => navigate(`/trips/${trip.id}`)}>
-            View Itinerary
+        <div className="flex flex-wrap gap-2">
+          <Button variant="outline" size="sm" onClick={() => navigate(`/itinerary/${trip.id}/view`)}>
+            <Eye className="w-4 h-4 mr-1.5" /> View Mode
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => navigate(`/trip/${trip.id}/budget`)}>
+            <Wallet className="w-4 h-4 mr-1.5" /> Budget
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => navigate(`/trip/${trip.id}/calendar`)}>
+            <Calendar className="w-4 h-4 mr-1.5" /> Calendar
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setShareOpen(true)}>
+            <Share2 className="w-4 h-4 mr-1.5" /> Share
           </Button>
           <Button variant="primary" size="sm" onClick={() => setAddStopOpen(true)}>
-            <PlusCircle className="w-4 h-4 mr-1" aria-hidden /> Add Stop
+            <PlusCircle className="w-4 h-4 mr-1.5" aria-hidden /> Add Stop
           </Button>
         </div>
       </div>
@@ -201,7 +264,7 @@ export default function ItineraryBuilder() {
       {/* Flight path */}
       {stops.length > 0 && (
         <div className="boarding-pass p-6 mb-6">
-          <h2 className="font-serif text-lg font-semibold text-midnight mb-4 text-center">Flight Path</h2>
+          <h2 className="font-serif text-lg font-semibold text-midnight mb-4 text-center">Flight Path & Stop Sequence</h2>
           <FlightPathLine
             stops={stops.map((s) => ({ id: s.id, label: s.city.name, sublabel: formatDateShort(s.startDate) }))}
             variant="light"
@@ -211,9 +274,12 @@ export default function ItineraryBuilder() {
 
       {/* Stops list with Delete Stop & Delete Activity actions */}
       <div className="flex items-center justify-between mb-4">
-        <h2 className="font-serif text-xl font-semibold text-midnight">Itinerary Stops & Activities</h2>
+        <div>
+          <h2 className="font-serif text-xl font-semibold text-midnight">Itinerary Stops & Scheduled Activities</h2>
+          <p className="font-sans text-xs text-ink/50">Drag stops to reorder your itinerary</p>
+        </div>
         <Button onClick={() => setAddStopOpen(true)}>
-          <PlusCircle className="w-4 h-4" aria-hidden /> Add Stop
+          <PlusCircle className="w-4 h-4 mr-1.5" aria-hidden /> Add Stop
         </Button>
       </div>
 
@@ -224,7 +290,7 @@ export default function ItineraryBuilder() {
           description="Add your first city stop to build your itinerary."
           action={
             <Button onClick={() => setAddStopOpen(true)}>
-              <PlusCircle className="w-4 h-4" aria-hidden /> Add your first stop
+              <PlusCircle className="w-4 h-4 mr-1.5" aria-hidden /> Add your first stop
             </Button>
           }
         />
@@ -246,7 +312,13 @@ export default function ItineraryBuilder() {
       )}
 
       {/* Add Stop Dialog */}
-      <AddStopDialog open={addStopOpen} onClose={() => setAddStopOpen(false)} onAdd={handleAddStop} />
+      <AddStopDialog
+        open={addStopOpen}
+        tripStart={trip.startDate}
+        tripEnd={trip.endDate}
+        onClose={() => setAddStopOpen(false)}
+        onAdd={handleAddStop}
+      />
 
       {/* Add Activity Dialog */}
       <AddActivityDialog
@@ -257,15 +329,55 @@ export default function ItineraryBuilder() {
         }}
       />
 
+      {/* Share Trip Modal */}
+      <Dialog open={shareOpen} onOpenChange={(o) => !o && setShareOpen(false)}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Share Trip Itinerary</DialogTitle>
+            <DialogDescription>
+              Share your travel itinerary with friends, family, or fellow travelers.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-3">
+            <div className="flex items-center justify-between p-3 rounded-lg bg-parchment-100/60 border border-parchment-300">
+              <div>
+                <p className="font-sans text-sm font-semibold text-midnight">Public Visibility</p>
+                <p className="font-sans text-xs text-ink/60">Allow anyone with the link to view this itinerary</p>
+              </div>
+              <input
+                type="checkbox"
+                checked={trip.status === 'completed' || !!(trip as any).is_public}
+                onChange={(e) => handleTogglePublic(e.target.checked)}
+                className="w-5 h-5 accent-teal rounded cursor-pointer"
+              />
+            </div>
+
+            <div>
+              <Label htmlFor="share-link-input">Public Itinerary URL</Label>
+              <div className="flex gap-2 mt-1.5">
+                <Input id="share-link-input" value={shareUrl} readOnly className="ticket-mono text-xs bg-parchment-200/40 text-ink/70" />
+                <Button variant="primary" size="sm" onClick={handleCopyShareLink}>
+                  {copiedLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                </Button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setShareOpen(false)}>
+              Close
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Confirm Delete Stop Modal */}
       <ConfirmDialog
         open={!!deletingStopId}
         onClose={() => setDeletingStopId(null)}
         onConfirm={handleConfirmDeleteStop}
-        title="Delete Stop"
-        description="Are you sure you want to delete this stop and all its scheduled activities from your itinerary?"
-        confirmText="Delete Stop"
-        variant="danger"
+        title="Delete Stop?"
+        description="Are you sure you want to delete this stop and all its scheduled activities from your itinerary? This action cannot be undone."
+        confirmLabel="Delete Stop"
       />
     </PageContainer>
   );
@@ -273,10 +385,14 @@ export default function ItineraryBuilder() {
 
 function AddStopDialog({
   open,
+  tripStart,
+  tripEnd,
   onClose,
   onAdd,
 }: {
   open: boolean;
+  tripStart: string;
+  tripEnd: string;
   onClose: () => void;
   onAdd: (city: City, start: string, end: string) => void;
 }) {
@@ -292,16 +408,19 @@ function AddStopDialog({
     if (!open) {
       setQuery('');
       setSelected(null);
-      setStartDate('');
-      setEndDate('');
+      setStartDate(tripStart);
+      setEndDate(tripEnd);
       setError('');
       setResults([]);
+    } else {
+      setStartDate(tripStart);
+      setEndDate(tripEnd);
     }
-  }, [open]);
+  }, [open, tripStart, tripEnd]);
 
   useEffect(() => {
     if (!query.trim()) {
-      setResults([]);
+      searchCities('', { sortBy: 'popularity' }).then(setResults);
       return;
     }
     setSearching(true);
@@ -313,15 +432,19 @@ function AddStopDialog({
 
   function handleAdd() {
     if (!selected) {
-      setError('Please select a city.');
+      setError('Please select a destination city.');
       return;
     }
     if (!startDate || !endDate) {
-      setError('Please select start and end dates.');
+      setError('Please select arrival and departure dates.');
       return;
     }
     if (new Date(endDate) < new Date(startDate)) {
-      setError('End date must be after start date.');
+      setError('Departure date cannot be before arrival date.');
+      return;
+    }
+    if (new Date(startDate) < new Date(tripStart) || new Date(endDate) > new Date(tripEnd)) {
+      setError(`Stop dates must be within trip range (${formatDateShort(tripStart)} — ${formatDateShort(tripEnd)}).`);
       return;
     }
     onAdd(selected, startDate, endDate);
@@ -332,19 +455,19 @@ function AddStopDialog({
       <DialogContent className="max-w-md">
         <DialogHeader>
           <DialogTitle>Add a Stop</DialogTitle>
-          <DialogDescription>Search for a city to add to your itinerary.</DialogDescription>
+          <DialogDescription>Search from the live database of destination cities.</DialogDescription>
         </DialogHeader>
         <div className="space-y-4 py-2">
           {!selected ? (
             <div>
-              <Label htmlFor="search-city">Search City</Label>
+              <Label htmlFor="search-city">Search City / Destination</Label>
               <div className="relative mt-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/40" />
                 <Input
                   id="search-city"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  placeholder="e.g. Paris, Tokyo, Mumbai…"
+                  placeholder="e.g. Paris, Tokyo, Mumbai, Kyoto…"
                   className="pl-10"
                 />
               </div>
@@ -358,8 +481,11 @@ function AddStopDialog({
                         onClick={() => setSelected(c)}
                         className="w-full text-left px-3 py-2 hover:bg-parchment-200/60 transition-colors flex items-center justify-between"
                       >
-                        <span className="font-sans text-sm font-medium text-midnight">{c.name}</span>
-                        <span className="ticket-mono text-xs text-ink/50">{c.country}</span>
+                        <div>
+                          <span className="font-sans text-sm font-medium text-midnight">{c.name}</span>
+                          <span className="font-sans text-xs text-ink/50 block">{c.country}</span>
+                        </div>
+                        <Badge variant="secondary" className="text-[10px]">{c.region}</Badge>
                       </button>
                     </li>
                   ))}
@@ -373,7 +499,7 @@ function AddStopDialog({
                 <p className="ticket-mono text-xs text-ink/60">{selected.country}</p>
               </div>
               <Button variant="ghost" size="sm" onClick={() => setSelected(null)}>
-                Change
+                Change City
               </Button>
             </div>
           )}
@@ -381,27 +507,31 @@ function AddStopDialog({
           {selected && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="stop-start">Start Date</Label>
+                <Label htmlFor="stop-start">Arrival Date</Label>
                 <Input
                   id="stop-start"
                   type="date"
                   value={startDate}
+                  min={tripStart}
+                  max={tripEnd}
                   onChange={(e) => setStartDate(e.target.value)}
                 />
               </div>
               <div>
-                <Label htmlFor="stop-end">End Date</Label>
+                <Label htmlFor="stop-end">Departure Date</Label>
                 <Input
                   id="stop-end"
                   type="date"
                   value={endDate}
+                  min={startDate || tripStart}
+                  max={tripEnd}
                   onChange={(e) => setEndDate(e.target.value)}
                 />
               </div>
             </div>
           )}
 
-          {error && <p className="font-sans text-xs text-coral">{error}</p>}
+          {error && <p className="font-sans text-xs text-coral font-medium">{error}</p>}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>
@@ -446,16 +576,16 @@ function AddActivityDialog({
     <Dialog open={!!stop} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-w-xl max-h-[85vh] flex flex-col">
         <DialogHeader>
-          <DialogTitle>Add Activity to {stop.city.name}</DialogTitle>
-          <DialogDescription>Select experiences to add to this stop.</DialogDescription>
+          <DialogTitle>Add Experience to {stop.city.name}</DialogTitle>
+          <DialogDescription>Choose curated activities from Supabase catalog for {stop.city.name}.</DialogDescription>
         </DialogHeader>
         <div className="flex-1 overflow-y-auto space-y-3 py-2">
           {loading ? (
-            <p className="font-sans text-sm text-ink/50 text-center py-4">Loading activities…</p>
+            <p className="font-sans text-sm text-ink/50 text-center py-6">Loading activities from catalog…</p>
           ) : activities.length === 0 ? (
             <EmptyState
-              title="No activities available"
-              description={`No activities listed for ${stop.city.name} yet.`}
+              title="No activities found"
+              description={`No catalog activities for ${stop.city.name} yet.`}
             />
           ) : (
             activities.map((act) => {

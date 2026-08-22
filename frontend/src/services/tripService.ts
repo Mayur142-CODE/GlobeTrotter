@@ -1,7 +1,6 @@
 import type { Trip } from '@/types/trip';
 import type { ActivityCategory } from '@/types/activity';
 import type { Region } from '@/types/city';
-import { mockTrips, getTripById } from '@/data/mockTrips';
 import { supabase } from '@/lib/supabase';
 
 interface SupabaseDestination {
@@ -31,8 +30,12 @@ interface SupabaseTripActivity {
   id: string;
   stop_id: string;
   activity_id: string;
-  custom_name?: string | null;
-  custom_cost?: number | string | null;
+  activity_date: string;
+  start_time?: string | null;
+  end_time?: string | null;
+  estimated_cost?: number | string | null;
+  notes?: string | null;
+  activity_order: number;
   activities?: SupabaseActivity | null;
 }
 
@@ -68,44 +71,57 @@ interface SupabaseTripRow {
   budget_limit?: number | string | null;
   currency?: string | null;
   is_public: boolean;
+  share_slug?: string | null;
   created_at?: string;
   updated_at?: string;
   trip_stops?: SupabaseTripStop[] | null;
   trip_expenses?: SupabaseExpense[] | null;
 }
 
+/**
+ * Fetch all trips owned by the current authenticated user.
+ */
 export async function getTrips(): Promise<Trip[]> {
   try {
     const { data: userRes } = await supabase.auth.getUser();
     const userId = userRes?.user?.id;
 
-    let query = supabase.from('trips').select(`
-      *,
-      trip_stops (
-        *,
-        destinations (*)
-      )
-    `);
-
-    if (userId) {
-      query = query.or(`user_id.eq.${userId},is_public.eq.true`);
-    } else {
-      query = query.eq('is_public', true);
+    if (!userId) {
+      return [];
     }
 
-    const { data, error } = await query.order('created_at', { ascending: false });
+    const { data, error } = await supabase
+      .from('trips')
+      .select(`
+        *,
+        trip_stops (
+          *,
+          destinations (*),
+          trip_activities (
+            *,
+            activities (*)
+          )
+        ),
+        trip_expenses (*)
+      `)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
 
-    if (error || !data || data.length === 0) {
-      return [...mockTrips];
+    if (error || !data) {
+      console.warn('[GlobeTrotter] getTrips notice:', error?.message);
+      return [];
     }
 
     return (data as SupabaseTripRow[]).map((t) => mapSupabaseTrip(t));
   } catch (err) {
-    console.warn('[GlobeTrotter] Supabase getTrips notice:', err);
-    return [...mockTrips];
+    console.warn('[GlobeTrotter] getTrips exception:', err);
+    return [];
   }
 }
 
+/**
+ * Fetch a single trip by ID (either owned by current user or public).
+ */
 export async function getTrip(id: string): Promise<Trip | undefined> {
   try {
     const { data, error } = await supabase
@@ -126,125 +142,192 @@ export async function getTrip(id: string): Promise<Trip | undefined> {
       .maybeSingle();
 
     if (error || !data) {
-      return getTripById(id);
+      console.warn('[GlobeTrotter] getTrip notice:', error?.message);
+      return undefined;
     }
 
     return mapSupabaseTrip(data as SupabaseTripRow);
   } catch (err) {
-    console.warn('[GlobeTrotter] Supabase getTrip notice:', err);
-    return getTripById(id);
+    console.warn('[GlobeTrotter] getTrip exception:', err);
+    return undefined;
   }
 }
 
+/**
+ * Create a new trip in Supabase.
+ */
 export async function createTrip(
   input: Omit<Trip, 'id' | 'stops' | 'budget' | 'createdAt' | 'status'> & {
     status?: Trip['status'];
     budgetLimit?: number;
   }
 ): Promise<Trip> {
-  try {
-    const { data: userRes } = await supabase.auth.getUser();
-    const user = userRes?.user;
-    const initialBudget = input.budgetLimit || 0;
+  const { data: userRes } = await supabase.auth.getUser();
+  const user = userRes?.user;
 
-    if (!user) {
-      const id = `trip-${String(Date.now()).slice(-6)}`;
-      const trip: Trip = {
-        id,
-        name: input.name,
-        description: input.description,
-        startDate: input.startDate,
-        endDate: input.endDate,
-        coverPhotoUrl: input.coverPhotoUrl,
-        status: input.status ?? 'draft',
-        stops: [],
-        budget: { tripId: id, total: initialBudget, averagePerDay: 0, dailyLimit: 0, lineItems: [], daily: [] },
-        createdAt: new Date().toISOString(),
-      };
-      mockTrips.push(trip);
-      return trip;
-    }
-
-    const { data, error } = await supabase
-      .from('trips')
-      .insert({
-        user_id: user.id,
-        name: input.name.trim(),
-        description: input.description?.trim() || null,
-        start_date: input.startDate,
-        end_date: input.endDate,
-        cover_photo_url: input.coverPhotoUrl || null,
-        budget_limit: initialBudget || null,
-        is_public: false,
-      })
-      .select('*')
-      .single();
-
-    if (error || !data) {
-      throw error || new Error('Failed to create trip');
-    }
-
-    const newTrip = mapSupabaseTrip(data as SupabaseTripRow);
-    mockTrips.push(newTrip);
-    return newTrip;
-  } catch (err) {
-    console.warn('[GlobeTrotter] Supabase createTrip fallback:', err);
-    const id = `trip-${String(Date.now()).slice(-6)}`;
-    const trip: Trip = {
-      id,
-      name: input.name,
-      description: input.description,
-      startDate: input.startDate,
-      endDate: input.endDate,
-      coverPhotoUrl: input.coverPhotoUrl,
-      status: input.status ?? 'draft',
-      stops: [],
-      budget: { tripId: id, total: input.budgetLimit || 0, averagePerDay: 0, dailyLimit: 0, lineItems: [], daily: [] },
-      createdAt: new Date().toISOString(),
-    };
-    mockTrips.push(trip);
-    return trip;
+  if (!user) {
+    throw new Error('You must be signed in to create a trip.');
   }
+
+  const initialBudget = input.budgetLimit ?? null;
+
+  const { data, error } = await supabase
+    .from('trips')
+    .insert({
+      user_id: user.id,
+      name: input.name.trim(),
+      description: input.description?.trim() || null,
+      start_date: input.startDate,
+      end_date: input.endDate,
+      cover_photo_url: input.coverPhotoUrl || 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800',
+      budget_limit: initialBudget,
+      is_public: false,
+    })
+    .select(`
+      *,
+      trip_stops (
+        *,
+        destinations (*),
+        trip_activities (
+          *,
+          activities (*)
+        )
+      ),
+      trip_expenses (*)
+    `)
+    .single();
+
+  if (error || !data) {
+    throw new Error(error?.message || 'Failed to create trip in database.');
+  }
+
+  return mapSupabaseTrip(data as SupabaseTripRow);
 }
 
-export async function updateTrip(id: string, updates: Partial<Trip>): Promise<Trip | undefined> {
-  try {
-    const payload: Record<string, unknown> = {};
-    if (updates.name !== undefined) payload.name = updates.name;
-    if (updates.description !== undefined) payload.description = updates.description;
-    if (updates.startDate !== undefined) payload.start_date = updates.startDate;
-    if (updates.endDate !== undefined) payload.end_date = updates.endDate;
-    if (updates.coverPhotoUrl !== undefined) payload.cover_photo_url = updates.coverPhotoUrl;
+/**
+ * Update an existing trip in Supabase.
+ */
+export async function updateTrip(id: string, updates: Partial<Trip> & { budgetLimit?: number; isPublic?: boolean }): Promise<Trip | undefined> {
+  const payload: Record<string, unknown> = {};
+  if (updates.name !== undefined) payload.name = updates.name.trim();
+  if (updates.description !== undefined) payload.description = updates.description.trim();
+  if (updates.startDate !== undefined) payload.start_date = updates.startDate;
+  if (updates.endDate !== undefined) payload.end_date = updates.endDate;
+  if (updates.coverPhotoUrl !== undefined) payload.cover_photo_url = updates.coverPhotoUrl;
+  if (updates.budgetLimit !== undefined) payload.budget_limit = updates.budgetLimit;
+  if (updates.isPublic !== undefined) payload.is_public = updates.isPublic;
 
-    if (Object.keys(payload).length > 0) {
-      await supabase.from('trips').update(payload).eq('id', id);
+  if (Object.keys(payload).length > 0) {
+    const { error } = await supabase.from('trips').update(payload).eq('id', id);
+    if (error) {
+      throw new Error(error.message || 'Failed to update trip.');
     }
-  } catch (err) {
-    console.warn('[GlobeTrotter] Supabase updateTrip notice:', err);
-  }
-
-  const idx = mockTrips.findIndex((t) => t.id === id);
-  if (idx !== -1) {
-    mockTrips[idx] = { ...mockTrips[idx], ...updates };
-    return mockTrips[idx];
   }
 
   return getTrip(id);
 }
 
+/**
+ * Toggle trip public visibility.
+ */
+export async function toggleTripPublic(id: string, isPublic: boolean): Promise<Trip | undefined> {
+  const { error } = await supabase
+    .from('trips')
+    .update({ is_public: isPublic })
+    .eq('id', id);
+
+  if (error) {
+    throw new Error(error.message || 'Failed to update trip sharing settings.');
+  }
+
+  return getTrip(id);
+}
+
+/**
+ * Delete a trip from Supabase (cascades to stops, activities, expenses).
+ */
 export async function deleteTrip(id: string): Promise<boolean> {
-  try {
-    await supabase.from('trips').delete().eq('id', id);
-  } catch (err) {
-    console.warn('[GlobeTrotter] Supabase deleteTrip notice:', err);
+  const { error } = await supabase.from('trips').delete().eq('id', id);
+  if (error) {
+    throw new Error(error.message || 'Failed to delete trip.');
   }
-
-  const idx = mockTrips.findIndex((t) => t.id === id);
-  if (idx !== -1) {
-    mockTrips.splice(idx, 1);
-  }
-
   return true;
+}
+
+/**
+ * Duplicate a public trip into the currently authenticated user's account.
+ */
+export async function duplicateTrip(sourceTripId: string): Promise<Trip> {
+  const { data: userRes } = await supabase.auth.getUser();
+  const currentUser = userRes?.user;
+  if (!currentUser) {
+    throw new Error('You must be signed in to copy this trip.');
+  }
+
+  // 1. Fetch source trip with full stops and activities
+  const sourceTrip = await getTrip(sourceTripId);
+  if (!sourceTrip) {
+    throw new Error('Source trip could not be found.');
+  }
+
+  // 2. Create the new trip owned by currentUser
+  const { data: newTripRow, error: tripError } = await supabase
+    .from('trips')
+    .insert({
+      user_id: currentUser.id,
+      name: `${sourceTrip.name} (Copy)`,
+      description: sourceTrip.description || null,
+      start_date: sourceTrip.startDate,
+      end_date: sourceTrip.endDate,
+      cover_photo_url: sourceTrip.coverPhotoUrl,
+      budget_limit: sourceTrip.budget?.dailyLimit ? sourceTrip.budget.total : null,
+      is_public: false,
+    })
+    .select('*')
+    .single();
+
+  if (tripError || !newTripRow) {
+    throw new Error(tripError?.message || 'Failed to duplicate trip.');
+  }
+
+  const newTripId = newTripRow.id;
+
+  // 3. Duplicate each stop and its activities
+  for (const stop of sourceTrip.stops) {
+    const { data: newStopRow, error: stopError } = await supabase
+      .from('trip_stops')
+      .insert({
+        trip_id: newTripId,
+        destination_id: stop.cityId,
+        start_date: stop.startDate,
+        end_date: stop.endDate,
+        stop_order: stop.order,
+        notes: stop.notes || null,
+      })
+      .select('*')
+      .single();
+
+    if (stopError || !newStopRow) continue;
+
+    // Duplicate activities for this stop
+    if (stop.activities && stop.activities.length > 0) {
+      const activitiesToInsert = stop.activities.map((act, index) => ({
+        stop_id: newStopRow.id,
+        activity_id: act.id,
+        activity_date: stop.startDate,
+        estimated_cost: act.price || 0,
+        activity_order: index + 1,
+      }));
+
+      await supabase.from('trip_activities').insert(activitiesToInsert);
+    }
+  }
+
+  const duplicatedTrip = await getTrip(newTripId);
+  if (!duplicatedTrip) {
+    throw new Error('Trip created but failed to reload.');
+  }
+  return duplicatedTrip;
 }
 
 function mapSupabaseTrip(t: SupabaseTripRow): Trip {
@@ -253,26 +336,32 @@ function mapSupabaseTrip(t: SupabaseTripRow): Trip {
     .sort((a, b) => (a.stop_order || 0) - (b.stop_order || 0))
     .map((s) => {
       const dest = s.destinations || ({} as SupabaseDestination);
-      const activities = (s.trip_activities || []).map((ta) => {
-        const act = ta.activities || ({} as SupabaseActivity);
-        const cost = Number(ta.custom_cost || act.estimated_cost) || 0;
-        totalActivityCost += cost;
-        return {
-          id: act.id || ta.id,
-          cityId: dest.id || s.destination_id,
-          name: ta.custom_name || act.name || 'Activity',
-          description: act.description || '',
-          category: (act.category as ActivityCategory) || 'Sightseeing',
-          imageUrl: act.image_url || dest.image_url || 'https://images.unsplash.com/photo-1511739001486-6bfe10ce785f?w=800',
-          price: cost,
-          currency: act.currency || 'INR',
-          durationHours: act.duration_minutes ? Math.round((act.duration_minutes / 60) * 10) / 10 : 2,
-          rating: Number(act.rating) || 4.8,
-          reviewCount: 95,
-          popularity: 90,
-          location: dest.name || 'City',
-        };
-      });
+      const activities = (s.trip_activities || [])
+        .sort((a, b) => (a.activity_order || 0) - (b.activity_order || 0))
+        .map((ta) => {
+          const act = ta.activities || ({} as SupabaseActivity);
+          const cost = Number(ta.estimated_cost ?? act.estimated_cost) || 0;
+          totalActivityCost += cost;
+          return {
+            id: act.id || ta.activity_id || ta.id,
+            cityId: dest.id || s.destination_id,
+            name: act.name || 'Activity',
+            description: act.description || '',
+            category: (act.category as ActivityCategory) || 'Sightseeing',
+            imageUrl: act.image_url || dest.image_url || 'https://images.unsplash.com/photo-1511739001486-6bfe10ce785f?w=800',
+            price: cost,
+            currency: act.currency || 'INR',
+            durationHours: act.duration_minutes ? Math.round((act.duration_minutes / 60) * 10) / 10 : 2,
+            rating: Number(act.rating) || 4.8,
+            reviewCount: 95,
+            popularity: 90,
+            location: dest.name || 'City',
+            scheduledDate: ta.activity_date,
+            startTime: ta.start_time,
+            endTime: ta.end_time,
+            notes: ta.notes,
+          };
+        });
 
       return {
         id: s.id,
@@ -300,7 +389,7 @@ function mapSupabaseTrip(t: SupabaseTripRow): Trip {
 
   const expenses = t.trip_expenses || [];
   const totalExpense = expenses.reduce((acc, e) => acc + (Number(e.amount) || 0), 0);
-  const grandTotal = totalActivityCost + totalExpense || Number(t.budget_limit) || 0;
+  const grandTotal = totalActivityCost + totalExpense;
   const days = Math.max(1, Math.round((new Date(t.end_date).getTime() - new Date(t.start_date).getTime()) / (1000 * 3600 * 24)));
 
   return {

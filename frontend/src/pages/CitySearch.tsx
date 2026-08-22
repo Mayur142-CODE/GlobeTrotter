@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Search, Plus, Star, TrendingUp, Edit2, Trash2, Loader2, Sparkles } from 'lucide-react';
+import { Search, Plus, Star, TrendingUp, Edit2, Trash2, Loader2, Sparkles, Heart } from 'lucide-react';
 import type { City, Region } from '@/types/city';
 import {
   searchCities,
@@ -10,6 +10,12 @@ import {
   deleteCity,
   type CitySearchFilters,
 } from '@/services/citySearchService';
+import {
+  getSavedDestinationIds,
+  saveDestination,
+  unsaveDestination,
+} from '@/services/savedDestinationService';
+import { useAuth } from '@/contexts/AuthContext';
 import { PageContainer, PageHeader } from '@/components/layout/PageContainer';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -27,10 +33,12 @@ const REGIONS: Region[] = ['Europe', 'Asia', 'Middle East', 'Southeast Asia', 'N
 export default function CitySearch() {
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useAuth();
   const [query, setQuery] = useState('');
   const [region, setRegion] = useState<Region | 'All'>('All');
   const [sortBy, setSortBy] = useState<CitySearchFilters['sortBy']>('popularity');
   const [results, setResults] = useState<City[]>([]);
+  const [savedIds, setSavedIds] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);
 
   // Modal Dialog states
@@ -53,8 +61,12 @@ export default function CitySearch() {
   const loadCities = async () => {
     setLoading(true);
     try {
-      const r = await searchCities(query, { region, sortBy });
+      const [r, saved] = await Promise.all([
+        searchCities(query, { region, sortBy }),
+        user ? getSavedDestinationIds(user.id) : Promise.resolve([]),
+      ]);
       setResults(r);
+      setSavedIds(saved);
     } finally {
       setLoading(false);
     }
@@ -65,7 +77,30 @@ export default function CitySearch() {
       loadCities();
     }, 250);
     return () => clearTimeout(t);
-  }, [query, region, sortBy]);
+  }, [query, region, sortBy, user]);
+
+  const handleToggleBookmark = async (city: City) => {
+    if (!user) {
+      toast({ title: 'Sign in required', description: 'Sign in to save destinations to your passport.', variant: 'default' });
+      navigate('/login');
+      return;
+    }
+
+    const isSaved = savedIds.includes(city.id);
+    try {
+      if (isSaved) {
+        await unsaveDestination(city.id);
+        setSavedIds((prev) => prev.filter((id) => id !== city.id));
+        toast({ title: 'Removed bookmark', description: `${city.name} removed from saved list.`, variant: 'default' });
+      } else {
+        await saveDestination(city.id);
+        setSavedIds((prev) => [...prev, city.id]);
+        toast({ title: 'Destination saved!', description: `${city.name} bookmarked to your profile.`, variant: 'success' });
+      }
+    } catch (err: any) {
+      toast({ title: 'Error saving destination', description: err?.message, variant: 'error' });
+    }
+  };
 
   const openAddModal = () => {
     setEditingCity(null);
@@ -102,28 +137,27 @@ export default function CitySearch() {
     try {
       if (editingCity) {
         await updateCity(editingCity.id, {
-          name: formName,
-          country: formCountry,
+          name: formName.trim(),
+          country: formCountry.trim(),
           region: formRegion,
-          description: formDescription,
-          imageUrl: formImageUrl,
-          costIndex: Number(formCostIndex),
-          popularity: Number(formPopularity),
+          description: formDescription.trim(),
+          costIndex: formCostIndex,
+          popularity: formPopularity,
+          imageUrl: formImageUrl.trim() || undefined,
         });
-        toast({ title: 'Destination updated', description: 'Saved changes to Supabase.', variant: 'success' });
+        toast({ title: 'City updated', description: `${formName} has been updated in catalog.`, variant: 'success' });
       } else {
         await createCity({
-          name: formName,
-          country: formCountry,
+          name: formName.trim(),
+          country: formCountry.trim(),
           region: formRegion,
-          description: formDescription,
-          imageUrl: formImageUrl,
-          costIndex: Number(formCostIndex),
-          popularity: Number(formPopularity),
+          description: formDescription.trim() || 'A vibrant travel destination awaiting discovery.',
+          costIndex: formCostIndex,
+          popularity: formPopularity,
+          imageUrl: formImageUrl.trim() || 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800',
         });
-        toast({ title: 'Destination created', description: 'Added new city to Supabase.', variant: 'success' });
+        toast({ title: 'Destination added', description: `${formName} added to the catalog.`, variant: 'success' });
       }
-
       setModalOpen(false);
       await loadCities();
     } catch (err: any) {
@@ -137,9 +171,8 @@ export default function CitySearch() {
     if (!deletingCityId) return;
     try {
       await deleteCity(deletingCityId);
-      toast({ title: 'Destination deleted', description: 'Removed from Supabase.', variant: 'success' });
+      toast({ title: 'Destination deleted', description: 'Removed from global destination catalog.', variant: 'success' });
       setDeletingCityId(null);
-      setResults((prev) => prev.filter((c) => c.id !== deletingCityId));
       await loadCities();
     } catch (err: any) {
       toast({ title: 'Delete failed', description: err?.message || 'Could not delete destination.', variant: 'error' });
@@ -148,14 +181,17 @@ export default function CitySearch() {
 
   return (
     <PageContainer>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 mb-2">
-        <PageHeader title="Explore Cities" subtitle="Discover and manage destinations for your next journey" />
-        <Button variant="primary" onClick={openAddModal} className="sm:shrink-0">
-          <Plus className="w-4 h-4 mr-1.5" aria-hidden /> Add Destination
-        </Button>
-      </div>
+      <PageHeader
+        title="Destination Explorer"
+        subtitle="Discover world-class cities, check cost indices, and bookmark favorite spots"
+        action={
+          <Button onClick={openAddModal}>
+            <Plus className="w-4 h-4 mr-1.5" aria-hidden /> Add Destination
+          </Button>
+        }
+      />
 
-      {/* Search & filters */}
+      {/* Search & Filters */}
       <div className="flex flex-col sm:flex-row gap-3 mb-6">
         <div className="relative flex-1">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/40" aria-hidden />
@@ -164,107 +200,153 @@ export default function CitySearch() {
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search by city, country, or keyword…"
             className="pl-10"
-            aria-label="Search cities"
+            aria-label="Search destinations"
           />
         </div>
-        <Select value={region} onChange={(e) => setRegion(e.target.value as Region | 'All')} className="sm:w-48" aria-label="Filter by region">
+        <Select
+          value={region}
+          onChange={(e) => setRegion(e.target.value as Region | 'All')}
+          className="sm:w-44"
+          aria-label="Filter by region"
+        >
           <option value="All">All Regions</option>
-          {REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
+          {REGIONS.map((r) => (
+            <option key={r} value={r}>
+              {r}
+            </option>
+          ))}
         </Select>
-        <Select value={sortBy} onChange={(e) => setSortBy(e.target.value as CitySearchFilters['sortBy'])} className="sm:w-44" aria-label="Sort cities">
+        <Select
+          value={sortBy}
+          onChange={(e) => setSortBy(e.target.value as CitySearchFilters['sortBy'])}
+          className="sm:w-44"
+          aria-label="Sort destinations"
+        >
           <option value="popularity">Most Popular</option>
-          <option value="costLow">Cost: Low to High</option>
-          <option value="costHigh">Cost: High to Low</option>
-          <option value="name">Name (A-Z)</option>
+          <option value="name">Alphabetical</option>
+          <option value="cost_asc">Cost: Low to High</option>
+          <option value="cost_desc">Cost: High to Low</option>
         </Select>
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {Array.from({ length: 6 }).map((_, i) => <CityCardSkeleton key={i} />)}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+          {Array.from({ length: 8 }).map((_, i) => (
+            <CityCardSkeleton key={i} />
+          ))}
         </div>
       ) : results.length === 0 ? (
         <EmptyState
-          title="No cities found"
-          description="Try clearing your filters or add a new destination."
-          action={<Button variant="outline" onClick={() => { setQuery(''); setRegion('All'); }}>Clear filters</Button>}
+          title="No destinations found"
+          description="Try broadening your search keywords or switching the region filter."
+          action={
+            <Button
+              variant="outline"
+              onClick={() => {
+                setQuery('');
+                setRegion('All');
+              }}
+            >
+              Reset Filters
+            </Button>
+          }
         />
       ) : (
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-          {results.map((city, i) => (
-            <motion.div
-              key={city.id}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: Math.min(i * 0.06, 0.3) }}
-              whileHover={{ y: -4 }}
-              className="rounded-xl overflow-hidden border border-parchment-300/60 shadow-paper bg-parchment-50 flex flex-col"
-            >
-              <div className="relative h-44 overflow-hidden">
-                <img src={city.imageUrl} alt={city.name} loading="lazy" className="w-full h-full object-cover" />
-                <div className="absolute top-2 right-2 flex items-center gap-1.5">
-                  {city.popularity >= 90 && (
-                    <Badge variant="gold"><Star className="w-3 h-3" aria-hidden /> Popular</Badge>
-                  )}
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => openEditModal(city)}
-                    className="h-7 w-7 p-0 bg-midnight/60 hover:bg-midnight text-parchment-50 rounded-full"
-                    title="Edit destination"
-                  >
-                    <Edit2 className="w-3 h-3" />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setDeletingCityId(city.id)}
-                    className="h-7 w-7 p-0 bg-midnight/60 hover:bg-coral text-parchment-50 rounded-full"
-                    title="Delete destination"
-                  >
-                    <Trash2 className="w-3 h-3" />
-                  </Button>
-                </div>
-              </div>
-
-              <div className="p-4 flex-1 flex flex-col justify-between">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-5">
+          {results.map((city, i) => {
+            const isBookmarked = savedIds.includes(city.id);
+            return (
+              <motion.div
+                key={city.id}
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: Math.min(i * 0.04, 0.3) }}
+                className="boarding-pass overflow-hidden group flex flex-col justify-between"
+              >
                 <div>
-                  <div className="flex items-start justify-between gap-2 mb-1">
-                    <div>
-                      <h3 className="font-serif text-lg font-semibold text-midnight">{city.name}</h3>
-                      <p className="font-sans text-sm text-ink/50">{city.country}</p>
-                    </div>
-                    <Badge variant="outline">{city.region}</Badge>
-                  </div>
-                  <p className="font-sans text-sm text-ink/60 line-clamp-2 mb-3">{city.description}</p>
-                </div>
+                  <div className="relative h-40 overflow-hidden">
+                    <img
+                      src={city.imageUrl}
+                      alt={city.name}
+                      loading="lazy"
+                      className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+                    />
+                    <div className="absolute inset-0 bg-gradient-to-t from-midnight/85 via-midnight/30 to-transparent" />
 
-                <div>
-                  <div className="flex items-center justify-between gap-2 mb-3">
-                    <div>
-                      <p className="ticket-mono text-[10px] uppercase tracking-wider text-ink/40">Cost Index</p>
-                      <p className="ticket-mono text-sm font-semibold text-midnight">{city.costIndex}/100</p>
+                    {/* Bookmark heart button */}
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        handleToggleBookmark(city);
+                      }}
+                      className="absolute top-2.5 right-2.5 p-2 rounded-full bg-midnight/60 backdrop-blur-sm text-parchment-50 hover:bg-midnight transition-colors focus-ring"
+                      aria-label={isBookmarked ? `Unsave ${city.name}` : `Save ${city.name}`}
+                    >
+                      <Heart
+                        className={`w-4 h-4 ${isBookmarked ? 'text-coral fill-coral' : 'text-parchment-50'}`}
+                      />
+                    </button>
+
+                    <div className="absolute top-2.5 left-2.5">
+                      <Badge variant="teal" className="text-[10px]">
+                        {city.region}
+                      </Badge>
                     </div>
-                    <div>
-                      <p className="ticket-mono text-[10px] uppercase tracking-wider text-ink/40">Popularity</p>
-                      <p className="ticket-mono text-sm font-semibold text-midnight flex items-center gap-1">
-                        <TrendingUp className="w-3.5 h-3.5 text-teal" aria-hidden />{city.popularity}%
-                      </p>
+
+                    <div className="absolute bottom-2.5 left-3.5 right-3.5">
+                      <h3 className="font-serif text-lg font-semibold text-parchment-50">{city.name}</h3>
+                      <p className="ticket-mono text-xs text-parchment-100/70">{city.country}</p>
                     </div>
                   </div>
+
+                  <div className="p-4 space-y-3">
+                    <p className="font-sans text-xs text-ink/60 line-clamp-2">{city.description}</p>
+                    <div className="grid grid-cols-2 gap-2 text-xs border-t border-dashed border-parchment-300 pt-2.5">
+                      <div>
+                        <span className="font-sans text-ink/50 text-[10px] block uppercase">Cost Index</span>
+                        <p className="ticket-mono text-sm font-semibold text-midnight">{city.costIndex}/100</p>
+                      </div>
+                      <div>
+                        <span className="font-sans text-ink/50 text-[10px] block uppercase">Popularity</span>
+                        <p className="ticket-mono text-sm font-semibold text-midnight flex items-center gap-1">
+                          <TrendingUp className="w-3.5 h-3.5 text-teal" aria-hidden />
+                          {city.popularity}%
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="p-4 pt-0 border-t border-dashed border-parchment-300 mt-2 flex items-center justify-between gap-2">
                   <Button
-                    className="w-full"
+                    size="sm"
+                    className="flex-1 text-xs"
                     onClick={() => {
-                      toast({ title: 'Destination selected', description: `${city.name} is ready for your trip.`, variant: 'success' });
+                      toast({ title: 'Destination selected', description: `${city.name} ready for trip planning.`, variant: 'success' });
                       navigate('/trips/create');
                     }}
                   >
-                    <Plus className="w-4 h-4 mr-1" aria-hidden /> Add to Trip
+                    <Plus className="w-3.5 h-3.5 mr-1" /> Add to Trip
                   </Button>
+                  <button
+                    onClick={() => openEditModal(city)}
+                    className="p-2 text-ink/40 hover:text-teal rounded focus-ring"
+                    aria-label={`Edit ${city.name}`}
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={() => setDeletingCityId(city.id)}
+                    className="p-2 text-ink/40 hover:text-coral rounded focus-ring"
+                    aria-label={`Delete ${city.name}`}
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
-              </div>
-            </motion.div>
-          ))}
+              </motion.div>
+            );
+          })}
         </div>
       )}
 
@@ -356,36 +438,36 @@ export default function CitySearch() {
                 </div>
 
                 <div>
-                  <Label htmlFor="city-desc">Description</Label>
-                  <Textarea
-                    id="city-desc"
-                    value={formDescription}
-                    onChange={(e) => setFormDescription(e.target.value)}
-                    placeholder="Brief highlights about this destination…"
-                    rows={3}
-                  />
-                </div>
-
-                <div>
-                  <Label htmlFor="city-img">Image URL (Optional)</Label>
+                  <Label htmlFor="city-img">Cover Image URL</Label>
                   <Input
                     id="city-img"
                     type="url"
                     value={formImageUrl}
                     onChange={(e) => setFormImageUrl(e.target.value)}
-                    placeholder="https://images.unsplash.com/…"
+                    placeholder="https://images.unsplash.com/photo-..."
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="city-desc">Description</Label>
+                  <Textarea
+                    id="city-desc"
+                    value={formDescription}
+                    onChange={(e) => setFormDescription(e.target.value)}
+                    rows={3}
+                    placeholder="Describe the culture, landscape, and attractions…"
                   />
                 </div>
 
                 <div className="flex items-center justify-end gap-3 pt-3 border-t border-parchment-300">
-                  <Button variant="outline" type="button" onClick={() => setModalOpen(false)}>
+                  <Button type="button" variant="outline" onClick={() => setModalOpen(false)}>
                     Cancel
                   </Button>
-                  <Button variant="primary" type="submit" disabled={submitting}>
+                  <Button type="submit" disabled={submitting}>
                     {submitting ? (
-                      <span className="inline-flex items-center gap-2">
-                        <Loader2 className="w-4 h-4 animate-spin" /> Saving…
-                      </span>
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Saving…
+                      </>
                     ) : editingCity ? (
                       'Save Changes'
                     ) : (
@@ -399,15 +481,14 @@ export default function CitySearch() {
         )}
       </AnimatePresence>
 
-      {/* Delete Confirmation Modal */}
+      {/* Delete Confirmation */}
       <ConfirmDialog
         open={!!deletingCityId}
         onClose={() => setDeletingCityId(null)}
         onConfirm={handleDeleteConfirm}
-        title="Delete Destination"
-        description="Are you sure you want to delete this destination? This will permanently remove it from Supabase."
-        confirmText="Delete"
-        variant="danger"
+        title="Delete this destination?"
+        description="Are you sure you want to remove this destination from the global catalog? Associated trips with this stop will also be affected."
+        confirmLabel="Delete Destination"
       />
     </PageContainer>
   );
