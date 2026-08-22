@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
-import { Plane, Menu, X, LayoutDashboard, Map, PlusCircle, Compass, User } from 'lucide-react';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
+import { Plane, Menu, X, LayoutDashboard, Map, PlusCircle, Compass, User, Sparkles } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const mobileNavItems = [
@@ -14,6 +14,22 @@ const mobileNavItems = [
 export function Navbar() {
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
+  const location = useLocation();
+  const currentPath = location.pathname;
+
+  const isItemActive = (to: string) => {
+    if (to === '/trips/create') return currentPath === '/trips/create';
+    if (to === '/trips') {
+      return (
+        currentPath === '/trips' ||
+        (currentPath.startsWith('/trips/') && currentPath !== '/trips/create') ||
+        currentPath.startsWith('/itinerary/') ||
+        currentPath.startsWith('/trip/')
+      );
+    }
+    if (to === '/dashboard') return currentPath === '/dashboard' || currentPath === '/';
+    return currentPath === to;
+  };
 
   return (
     <>
@@ -43,42 +59,44 @@ export function Navbar() {
             className="absolute top-14 left-0 right-0 bg-midnight text-parchment-50 py-3 px-4 space-y-1 shadow-paper-lg"
             onClick={(e) => e.stopPropagation()}
           >
-            {mobileNavItems.map((item) => (
-              <NavLink
-                key={item.to}
-                to={item.to}
-                onClick={() => setOpen(false)}
-                className={({ isActive }) =>
-                  cn(
+            {mobileNavItems.map((item) => {
+              const active = isItemActive(item.to);
+              return (
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  onClick={() => setOpen(false)}
+                  className={cn(
                     'flex items-center gap-3 px-3 py-3 rounded-lg font-sans text-sm font-medium transition-colors focus-ring',
-                    isActive ? 'bg-teal text-parchment-50' : 'text-parchment-100 hover:bg-parchment-50/10'
-                  )
-                }
-              >
-                <item.icon className="w-5 h-5" aria-hidden />
-                {item.label}
-              </NavLink>
-            ))}
+                    active ? 'bg-teal text-parchment-50' : 'text-parchment-100 hover:bg-parchment-50/10'
+                  )}
+                >
+                  <item.icon className="w-5 h-5" aria-hidden />
+                  {item.label}
+                </NavLink>
+              );
+            })}
           </nav>
         </div>
       )}
 
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-midnight border-t border-parchment-50/10 flex items-center justify-around px-2 py-1.5">
-        {mobileNavItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={({ isActive }) =>
-              cn(
+        {mobileNavItems.map((item) => {
+          const active = isItemActive(item.to);
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={cn(
                 'flex flex-col items-center gap-0.5 px-2 py-1.5 rounded-lg font-sans text-[10px] font-medium transition-colors focus-ring',
-                isActive ? 'text-teal-200' : 'text-parchment-100/60'
-              )
-            }
-          >
-            <item.icon className="w-5 h-5" aria-hidden />
-            {item.label}
-          </NavLink>
-        ))}
+                active ? 'text-teal-200' : 'text-parchment-100/60'
+              )}
+            >
+              <item.icon className="w-5 h-5" aria-hidden />
+              {item.label}
+            </NavLink>
+          );
+        })}
       </nav>
     </>
   );

@@ -15,6 +15,7 @@ import {
 import { useAdminAuth } from '@/contexts/AdminAuthContext';
 import { useToast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
+import { Footer } from '@/components/layout/Footer';
 
 const adminNavItems = [
   { to: '/admin', label: 'Platform Overview', icon: LayoutDashboard, end: true },
@@ -174,6 +175,7 @@ export function AdminLayout() {
             <Outlet />
           </Suspense>
         </main>
+        <Footer />
       </div>
     </div>
   );

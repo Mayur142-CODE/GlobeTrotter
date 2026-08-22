@@ -1,4 +1,4 @@
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useNavigate, useLocation } from 'react-router-dom';
 import {
   LayoutDashboard,
   Map,
@@ -7,6 +7,7 @@ import {
   User,
   Plane,
   LogOut,
+  Sparkles,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/contexts/AuthContext';
@@ -18,14 +19,44 @@ const navItems = [
   { to: '/trips', label: 'My Trips', icon: Map },
   { to: '/trips/create', label: 'Plan Trip', icon: PlusCircle },
   { to: '/search/cities', label: 'Explore Cities', icon: Compass },
-  { to: '/search/activities', label: 'Activities', icon: Compass },
+  { to: '/search/activities', label: 'Activities', icon: Sparkles },
   { to: '/profile', label: 'Profile', icon: User },
 ];
 
 export function Sidebar() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { signOut, user } = useAuth();
   const toast = useToast();
+
+  const currentPath = location.pathname;
+
+  const isItemActive = (to: string) => {
+    if (to === '/trips/create') {
+      return currentPath === '/trips/create';
+    }
+    if (to === '/trips') {
+      return (
+        currentPath === '/trips' ||
+        (currentPath.startsWith('/trips/') && currentPath !== '/trips/create') ||
+        currentPath.startsWith('/itinerary/') ||
+        currentPath.startsWith('/trip/')
+      );
+    }
+    if (to === '/search/cities') {
+      return currentPath === '/search/cities';
+    }
+    if (to === '/search/activities') {
+      return currentPath === '/search/activities';
+    }
+    if (to === '/dashboard') {
+      return currentPath === '/dashboard' || currentPath === '/';
+    }
+    if (to === '/profile') {
+      return currentPath === '/profile';
+    }
+    return currentPath === to;
+  };
 
   const handleLogout = async () => {
     try {
@@ -54,23 +85,24 @@ export function Sidebar() {
       </button>
 
       <nav className="flex-1 py-4 px-3 space-y-1 overflow-y-auto scrollbar-thin">
-        {navItems.map((item) => (
-          <NavLink
-            key={item.to}
-            to={item.to}
-            className={({ isActive }) =>
-              cn(
+        {navItems.map((item) => {
+          const active = isItemActive(item.to);
+          return (
+            <NavLink
+              key={item.to}
+              to={item.to}
+              className={cn(
                 'flex items-center gap-3 px-3 py-2.5 rounded-lg font-sans text-sm font-medium transition-colors focus-ring',
-                isActive
-                  ? 'bg-teal text-parchment-50'
-                  : 'text-parchment-100 hover:bg-parchment-50/10 hover:text-parchment-50'
-              )
-            }
-          >
-            <item.icon className="w-4.5 h-4.5 shrink-0" aria-hidden />
-            {item.label}
-          </NavLink>
-        ))}
+                active
+                  ? 'bg-teal text-parchment-50 shadow-sm'
+                  : 'text-parchment-100/70 hover:bg-parchment-50/10 hover:text-parchment-50'
+              )}
+            >
+              <item.icon className="w-4.5 h-4.5 shrink-0" aria-hidden />
+              {item.label}
+            </NavLink>
+          );
+        })}
       </nav>
 
       {/* User profile snippet & Logout */}
@@ -89,7 +121,6 @@ export function Sidebar() {
             </div>
           </div>
         )}
-
 
         <button
           onClick={handleLogout}

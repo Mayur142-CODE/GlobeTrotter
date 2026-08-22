@@ -154,6 +154,37 @@ export async function getTrip(id: string): Promise<Trip | undefined> {
 }
 
 /**
+ * Upload a trip cover image with persistent storage and resilient fallback.
+ */
+export async function uploadTripCover(userId: string, file: File | Blob): Promise<string> {
+  try {
+    const fileExt = file instanceof File ? file.name.split('.').pop() || 'jpg' : 'jpg';
+    const filePath = `${userId}/trip-covers/${Date.now()}.${fileExt}`;
+
+    const { error: uploadError } = await supabase.storage
+      .from('avatars')
+      .upload(filePath, file, { upsert: true, contentType: file.type || 'image/jpeg' });
+
+    if (!uploadError) {
+      const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
+      if (publicUrlData?.publicUrl) {
+        return publicUrlData.publicUrl;
+      }
+    }
+  } catch (err) {
+    console.warn('[GlobeTrotter] Cover storage upload notice:', err);
+  }
+
+  // Resilient fallback: convert to base64 Data URL so image is never lost on refresh
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => resolve('https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800');
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
  * Create a new trip in Supabase.
  */
 export async function createTrip(

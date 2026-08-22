@@ -1,28 +1,20 @@
 import { useState, useRef, type FormEvent, type ChangeEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ImagePlus, ArrowRight, Check, Upload, Loader2, Sparkles } from 'lucide-react';
+import { ImagePlus, ArrowRight, Upload, Loader2, Sparkles, X, RefreshCw, Camera } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Button } from '@/components/ui/button';
 import { PageContainer, PageHeader } from '@/components/layout/PageContainer';
 import { useToast } from '@/hooks/use-toast';
-import { createTrip } from '@/services/tripService';
-import { supabase } from '@/lib/supabase';
-
-const COVER_OPTIONS = [
-  { url: 'https://images.pexels.com/photos/2363/france-landmark-lights-night.jpg?auto=compress&cs=tinysrgb&w=800', label: 'Paris' },
-  { url: 'https://images.pexels.com/photos/161251/kyoto-japan-temple-zen-161251.jpeg?auto=compress&cs=tinysrgb&w=800', label: 'Kyoto' },
-  { url: 'https://images.pexels.com/photos/1802255/pexels-photo-1802255.jpeg?auto=compress&cs=tinysrgb&w=800', label: 'Bali' },
-  { url: 'https://images.pexels.com/photos/819764/pexels-photo-819764.jpeg?auto=compress&cs=tinysrgb&w=800', label: 'Barcelona' },
-  { url: 'https://images.pexels.com/photos/2506922/pexels-photo-2506922.jpeg?auto=compress&cs=tinysrgb&w=800', label: 'Tokyo' },
-  { url: 'https://images.pexels.com/photos/3787839/pexels-photo-3787839.jpeg?auto=compress&cs=tinysrgb&w=800', label: 'Dubai' },
-];
+import { createTrip, uploadTripCover } from '@/services/tripService';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function CreateTrip() {
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useAuth();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [name, setName] = useState('');
@@ -30,10 +22,11 @@ export default function CreateTrip() {
   const [endDate, setEndDate] = useState('');
   const [description, setDescription] = useState('');
   const [budgetLimit, setBudgetLimit] = useState<string>('');
-  const [coverUrl, setCoverUrl] = useState(COVER_OPTIONS[0].url);
-  const [customFile, setCustomFile] = useState<File | null>(null);
+
+  // Cover photo upload state
+  const [coverFile, setCoverFile] = useState<File | Blob | null>(null);
+  const [coverPreview, setCoverPreview] = useState<string>('');
   const [uploadingImage, setUploadingImage] = useState(false);
-  const [customPreview, setCustomPreview] = useState<string>('');
 
   const [errors, setErrors] = useState<{ name?: string; dates?: string }>({});
   const [loading, setLoading] = useState(false);
@@ -47,12 +40,13 @@ export default function CreateTrip() {
     return Object.keys(e).length === 0;
   }
 
-  const handleFileChange = async (e: ChangeEvent<HTMLInputElement>) => {
+  // Compress photo locally before storing preview
+  const handleFileChange = (e: ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (!file.type.startsWith('image/')) {
-      toast({ title: 'Invalid file', description: 'Please select an image file.', variant: 'error' });
+      toast({ title: 'Invalid file', description: 'Please select an image file (JPG, PNG, WebP).', variant: 'error' });
       return;
     }
 
@@ -61,32 +55,63 @@ export default function CreateTrip() {
       return;
     }
 
-    setCustomFile(file);
-    const localPreview = URL.createObjectURL(file);
-    setCustomPreview(localPreview);
-    setCoverUrl(localPreview);
+    const img = new Image();
+    const tempUrl = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(tempUrl);
+      const canvas = document.createElement('canvas');
+      const maxDim = 1200;
+      let width = img.width;
+      let height = img.height;
 
-    // Upload to Supabase Storage asynchronously
-    setUploadingImage(true);
-    try {
-      const fileExt = file.name.split('.').pop() || 'jpg';
-      const filePath = `trip-covers/${Date.now()}_${Math.random().toString(36).slice(2)}.${fileExt}`;
-
-      const { error: uploadError } = await supabase.storage
-        .from('avatars')
-        .upload(filePath, file, { upsert: true, contentType: file.type });
-
-      if (!uploadError) {
-        const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
-        if (publicUrlData?.publicUrl) {
-          setCoverUrl(publicUrlData.publicUrl);
-          toast({ title: 'Photo uploaded!', description: 'Saved to Supabase storage.', variant: 'success' });
+      if (width > height) {
+        if (width > maxDim) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        }
+      } else {
+        if (height > maxDim) {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
         }
       }
-    } catch (err) {
-      console.warn('[GlobeTrotter] Cover photo upload fallback:', err);
-    } finally {
-      setUploadingImage(false);
+
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => {
+            if (blob) {
+              setCoverFile(blob);
+              const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+              setCoverPreview(dataUrl);
+            } else {
+              setCoverFile(file);
+              const reader = new FileReader();
+              reader.onload = () => setCoverPreview(reader.result as string);
+              reader.readAsDataURL(file);
+            }
+          },
+          'image/jpeg',
+          0.85
+        );
+      } else {
+        setCoverFile(file);
+        const reader = new FileReader();
+        reader.onload = () => setCoverPreview(reader.result as string);
+        reader.readAsDataURL(file);
+      }
+    };
+    img.src = tempUrl;
+  };
+
+  const handleRemovePhoto = () => {
+    setCoverFile(null);
+    setCoverPreview('');
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
     }
   };
 
@@ -95,29 +120,17 @@ export default function CreateTrip() {
     if (!validate()) return;
     setLoading(true);
 
-    let finalCoverUrl = coverUrl;
-
-    // If file selected and not yet uploaded to Supabase Storage, upload before submit
-    if (customFile && coverUrl.startsWith('blob:')) {
-      try {
-        const fileExt = customFile.name.split('.').pop() || 'jpg';
-        const filePath = `trip-covers/${Date.now()}_${Math.random().toString(36).slice(2)}.${fileExt}`;
-        const { error: uploadError } = await supabase.storage
-          .from('avatars')
-          .upload(filePath, customFile, { upsert: true, contentType: customFile.type });
-
-        if (!uploadError) {
-          const { data: publicUrlData } = supabase.storage.from('avatars').getPublicUrl(filePath);
-          if (publicUrlData?.publicUrl) {
-            finalCoverUrl = publicUrlData.publicUrl;
-          }
-        }
-      } catch (err) {
-        console.warn('[GlobeTrotter] Final storage upload notice:', err);
-      }
-    }
-
     try {
+      let finalCoverUrl = 'https://images.unsplash.com/photo-1488646953014-85cb44e25828?w=800';
+
+      // If user uploaded a custom cover image, upload persistently to Supabase Storage
+      if (coverFile && user) {
+        setUploadingImage(true);
+        finalCoverUrl = await uploadTripCover(user.id, coverFile);
+      } else if (coverPreview && !coverPreview.startsWith('blob:')) {
+        finalCoverUrl = coverPreview;
+      }
+
       const trip = await createTrip({
         name: name.trim(),
         description: description.trim() || 'A new adventure awaiting its story.',
@@ -127,12 +140,14 @@ export default function CreateTrip() {
         budgetLimit: budgetLimit.trim() ? Number(budgetLimit) : undefined,
         status: 'draft',
       });
+
       toast({ title: 'Trip created!', description: 'Start adding stops to your itinerary.', variant: 'success' });
       navigate(`/itinerary/${trip.id}`);
     } catch (err: any) {
       toast({ title: 'Error creating trip', description: err?.message || 'Could not create trip.', variant: 'error' });
     } finally {
       setLoading(false);
+      setUploadingImage(false);
     }
   }
 
@@ -158,159 +173,141 @@ export default function CreateTrip() {
             aria-invalid={!!errors.name}
             aria-describedby={errors.name ? 'name-error' : undefined}
             required
+            className="mt-1"
           />
-          {errors.name && <p id="name-error" className="font-sans text-xs text-coral mt-1.5">{errors.name}</p>}
+          {errors.name && <p id="name-error" className="font-sans text-xs text-coral mt-1">{errors.name}</p>}
         </div>
 
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div>
             <Label htmlFor="start-date">Start Date *</Label>
-            <Input id="start-date" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} required />
+            <Input
+              id="start-date"
+              type="date"
+              value={startDate}
+              onChange={(e) => setStartDate(e.target.value)}
+              className="mt-1 font-mono text-xs"
+              required
+            />
           </div>
           <div>
             <Label htmlFor="end-date">End Date *</Label>
-            <Input id="end-date" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} required />
+            <Input
+              id="end-date"
+              type="date"
+              value={endDate}
+              min={startDate}
+              onChange={(e) => setEndDate(e.target.value)}
+              className="mt-1 font-mono text-xs"
+              required
+            />
           </div>
         </div>
-        {errors.dates && <p className="font-sans text-xs text-coral -mt-2">{errors.dates}</p>}
+        {errors.dates && <p className="font-sans text-xs text-coral">{errors.dates}</p>}
 
         <div>
-          <Label htmlFor="description">Description</Label>
+          <Label htmlFor="trip-desc">Description / Notes</Label>
           <Textarea
-            id="description"
+            id="trip-desc"
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            placeholder="What's this journey about?"
+            placeholder="What's the theme or goal of this trip?"
             rows={3}
+            className="mt-1"
           />
         </div>
 
         <div>
-          <Label htmlFor="budget-limit">Estimated Price / Budget (₹ INR)</Label>
+          <Label htmlFor="budget-limit">Total Budget Limit (INR)</Label>
           <Input
             id="budget-limit"
             type="number"
             min={0}
-            step={500}
+            step="100"
             value={budgetLimit}
             onChange={(e) => setBudgetLimit(e.target.value)}
             placeholder="e.g. 50000"
+            className="mt-1"
           />
+          <p className="font-sans text-xs text-ink/50 mt-1">Optional budget ceiling to track expenditures.</p>
         </div>
 
+        {/* Clean Cover Photo Upload Section (No Preset Templates) */}
         <div>
-          <div className="flex items-center justify-between mb-2">
-            <Label>Cover Photo</Label>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
+          <Label className="block mb-2">Cover Photo</Label>
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png, image/jpeg, image/jpg, image/webp"
+            onChange={handleFileChange}
+            className="hidden"
+          />
+
+          {!coverPreview ? (
+            <div
               onClick={() => fileInputRef.current?.click()}
-              className="text-xs border-teal/40 text-teal hover:bg-teal/10"
-              disabled={uploadingImage}
+              className="border-2 border-dashed border-parchment-300 hover:border-teal rounded-xl p-6 text-center cursor-pointer transition-colors bg-parchment-50/50 hover:bg-parchment-100/50 flex flex-col items-center justify-center gap-2 group"
             >
-              {uploadingImage ? (
-                <>
-                  <Loader2 className="w-3.5 h-3.5 mr-1 animate-spin" /> Uploading…
-                </>
-              ) : (
-                <>
-                  <Upload className="w-3.5 h-3.5 mr-1" /> Upload Custom Photo
-                </>
-              )}
-            </Button>
-            <input
-              type="file"
-              ref={fileInputRef}
-              onChange={handleFileChange}
-              accept="image/*"
-              className="hidden"
-            />
-          </div>
-
-          <p className="font-sans text-xs text-ink/50 mb-3">
-            Select a preset cover or upload your own image from your device
-          </p>
-
-          <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-            {/* Custom Uploaded Preview Tile if present */}
-            {customPreview && (
-              <button
-                type="button"
-                onClick={() => setCoverUrl(customPreview)}
-                className={`relative rounded-lg overflow-hidden aspect-[4/3] focus-ring transition-all ${
-                  coverUrl === customPreview ? 'ring-2 ring-teal ring-offset-2 ring-offset-parchment-50' : 'ring-1 ring-parchment-300/60'
-                }`}
-                aria-label="Select custom uploaded photo"
-              >
-                <img src={customPreview} alt="Custom uploaded cover" className="w-full h-full object-cover" />
-                {coverUrl === customPreview && (
-                  <div className="absolute inset-0 bg-teal/20 flex items-center justify-center">
-                    <div className="w-7 h-7 rounded-full bg-teal flex items-center justify-center">
-                      <Check className="w-4 h-4 text-parchment-50" aria-hidden />
-                    </div>
+              <div className="w-12 h-12 rounded-full bg-midnight/5 group-hover:bg-teal/10 flex items-center justify-center text-ink/50 group-hover:text-teal transition-colors">
+                <Upload className="w-6 h-6" />
+              </div>
+              <div>
+                <p className="font-serif text-sm font-semibold text-midnight">Upload Cover Photo</p>
+                <p className="font-sans text-xs text-ink/50 mt-0.5">
+                  No cover photo selected (JPG, PNG, WebP up to 10MB)
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              <div className="relative h-48 w-full rounded-xl overflow-hidden shadow-paper border border-parchment-300">
+                <img
+                  src={coverPreview}
+                  alt="Uploaded cover preview"
+                  className="w-full h-full object-cover"
+                />
+                <div className="absolute inset-0 bg-gradient-to-t from-midnight/60 to-transparent" />
+                <div className="absolute bottom-3 left-3 right-3 flex items-center justify-between">
+                  <span className="ticket-mono text-xs text-parchment-50 font-medium">Cover Photo Selected</span>
+                  <div className="flex gap-2">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="bg-midnight/70 text-parchment-50 border-parchment-50/20 hover:bg-midnight text-xs"
+                    >
+                      <RefreshCw className="w-3.5 h-3.5 mr-1" /> Change Photo
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="coral"
+                      size="sm"
+                      onClick={handleRemovePhoto}
+                      className="text-xs"
+                    >
+                      <X className="w-3.5 h-3.5 mr-1" /> Remove
+                    </Button>
                   </div>
-                )}
-                <div className="absolute bottom-0 left-0 right-0 bg-midnight/70 px-2 py-1 flex items-center justify-between">
-                  <span className="ticket-mono text-[10px] text-teal font-semibold">CUSTOM</span>
-                  <Sparkles className="w-3 h-3 text-gold" />
                 </div>
-              </button>
-            )}
-
-            {/* Presets */}
-            {COVER_OPTIONS.map((opt) => (
-              <button
-                key={opt.url}
-                type="button"
-                onClick={() => setCoverUrl(opt.url)}
-                className={`relative rounded-lg overflow-hidden aspect-[4/3] focus-ring transition-all ${
-                  coverUrl === opt.url ? 'ring-2 ring-teal ring-offset-2 ring-offset-parchment-50' : 'ring-1 ring-parchment-300/60'
-                }`}
-                aria-label={`Select ${opt.label} cover photo`}
-                aria-pressed={coverUrl === opt.url}
-              >
-                <img src={opt.url} alt={opt.label} loading="lazy" className="w-full h-full object-cover" />
-                {coverUrl === opt.url && (
-                  <div className="absolute inset-0 bg-teal/20 flex items-center justify-center">
-                    <div className="w-7 h-7 rounded-full bg-teal flex items-center justify-center">
-                      <Check className="w-4 h-4 text-parchment-50" aria-hidden />
-                    </div>
-                  </div>
-                )}
-                <div className="absolute bottom-0 left-0 right-0 bg-midnight/60 px-2 py-1">
-                  <span className="ticket-mono text-[10px] text-parchment-50">{opt.label}</span>
-                </div>
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-3">
-            <Label htmlFor="custom-url" className="text-xs text-ink/60">Or enter an image URL directly:</Label>
-            <Input
-              id="custom-url"
-              type="url"
-              value={coverUrl.startsWith('blob:') ? '' : coverUrl}
-              onChange={(e) => setCoverUrl(e.target.value)}
-              placeholder="https://images.unsplash.com/…"
-              className="mt-1 text-xs"
-            />
-          </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        <div className="flex items-center justify-end gap-3 pt-2 border-t border-dashed border-parchment-300">
+        <div className="pt-4 border-t border-parchment-300 flex justify-end gap-3">
           <Button type="button" variant="outline" onClick={() => navigate('/trips')}>
             Cancel
           </Button>
           <Button type="submit" disabled={loading || uploadingImage}>
-            {loading ? (
-              <span className="inline-flex items-center gap-2">
-                <Loader2 className="w-4 h-4 animate-spin" /> Creating…
+            {loading || uploadingImage ? (
+              <span className="flex items-center gap-2">
+                <Loader2 className="w-4 h-4 animate-spin" /> Saving Trip…
               </span>
             ) : (
-              <span className="inline-flex items-center gap-2">
-                Create & Build Itinerary <ArrowRight className="w-4 h-4" aria-hidden />
-              </span>
+              <>
+                Create & Continue <ArrowRight className="w-4 h-4 ml-1.5" />
+              </>
             )}
           </Button>
         </div>
