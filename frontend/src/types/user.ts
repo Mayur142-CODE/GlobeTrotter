@@ -9,11 +9,14 @@ export interface User {
   avatarUrl: string;
   phone?: string;
   city?: string;
+  cityId?: string;
   country?: string;
+  countryId?: string;
   additionalInfo?: string;
   language: string;
   savedDestinationIds: string[];
   role: UserRole;
   joinedAt: string;
 }
+
 

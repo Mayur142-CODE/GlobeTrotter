@@ -19,7 +19,9 @@ export interface SignupData {
   password?: string;
   phone?: string;
   city?: string;
+  cityId?: string;
   country?: string;
+  countryId?: string;
   additionalInfo?: string;
   avatarUrl?: string;
 }
@@ -39,7 +41,9 @@ export async function signup(
       email: nameOrData.email || mockUser.email,
       phone: nameOrData.phone,
       city: nameOrData.city,
+      cityId: nameOrData.cityId,
       country: nameOrData.country,
+      countryId: nameOrData.countryId,
       additionalInfo: nameOrData.additionalInfo,
       avatarUrl: nameOrData.avatarUrl || mockUser.avatarUrl,
     };

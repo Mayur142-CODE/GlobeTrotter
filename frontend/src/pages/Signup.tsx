@@ -1,4 +1,4 @@
-import { useState, useRef, type FormEvent, type ChangeEvent } from 'react';
+import { useState, useRef, useEffect, type FormEvent, type ChangeEvent } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -15,8 +15,6 @@ import {
   EyeOff,
   Check,
   CheckCircle2,
-  Sparkles,
-  Info,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
@@ -24,6 +22,9 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { signup } from '@/services/authService';
+import { getCountries, searchCities } from '@/services/locationService';
+import { LocationCombobox, type ComboboxOption } from '@/components/shared/LocationCombobox';
+import type { Country, CityLocation } from '@/types/location';
 
 export default function Signup() {
   const navigate = useNavigate();
@@ -38,8 +39,19 @@ export default function Signup() {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [city, setCity] = useState('');
-  const [country, setCountry] = useState('');
+  
+  // Location States
+  const [selectedCountry, setSelectedCountry] = useState<Country | null>(null);
+  const [selectedCity, setSelectedCity] = useState<CityLocation | null>(null);
+  const [countriesList, setCountriesList] = useState<Country[]>([]);
+  const [citiesList, setCitiesList] = useState<CityLocation[]>([]);
+  
+  // Location Loading & Error states
+  const [loadingCountries, setLoadingCountries] = useState(false);
+  const [countriesError, setCountriesError] = useState<string | null>(null);
+  const [loadingCities, setLoadingCities] = useState(false);
+  const [citiesError, setCitiesError] = useState<string | null>(null);
+
   const [additionalInfo, setAdditionalInfo] = useState('');
   const [agreeTerms, setAgreeTerms] = useState(false);
 
@@ -49,6 +61,100 @@ export default function Signup() {
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [loading, setLoading] = useState(false);
   const [isSuccess, setIsSuccess] = useState(false);
+
+  // Load countries on mount
+  const fetchCountries = async () => {
+    setLoadingCountries(true);
+    setCountriesError(null);
+    try {
+      const data = await getCountries();
+      setCountriesList(data);
+    } catch {
+      setCountriesError('Unable to load countries.');
+    } finally {
+      setLoadingCountries(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCountries();
+  }, []);
+
+  // Fetch initial cities whenever country changes
+  useEffect(() => {
+    if (!selectedCountry) {
+      setCitiesList([]);
+      setSelectedCity(null);
+      return;
+    }
+
+    let isMounted = true;
+    const fetchCountryCities = async () => {
+      setLoadingCities(true);
+      setCitiesError(null);
+      try {
+        const cities = await searchCities(selectedCountry.id, '');
+        if (isMounted) {
+          setCitiesList(cities);
+        }
+      } catch {
+        if (isMounted) {
+          setCitiesError('Unable to load cities.');
+        }
+      } finally {
+        if (isMounted) {
+          setLoadingCities(false);
+        }
+      }
+    };
+
+    fetchCountryCities();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [selectedCountry]);
+
+  // Handle dynamic city search within selected country
+  const handleCitySearchChange = async (query: string) => {
+    if (!selectedCountry) return;
+    setLoadingCities(true);
+    setCitiesError(null);
+    try {
+      const results = await searchCities(selectedCountry.id, query);
+      setCitiesList(results);
+    } catch {
+      setCitiesError('Unable to search cities.');
+    } finally {
+      setLoadingCities(false);
+    }
+  };
+
+  // Handle country selection
+  const handleCountrySelect = (option: ComboboxOption) => {
+    const matched = countriesList.find((c) => c.id === option.id) || null;
+    setSelectedCountry(matched);
+    // Reset previously selected city when country changes
+    setSelectedCity(null);
+    if (errors.country) {
+      setErrors((prev) => ({ ...prev, country: '' }));
+    }
+  };
+
+  // Handle city selection
+  const handleCitySelect = (option: ComboboxOption) => {
+    const matched = citiesList.find((c) => c.id === option.id) || {
+      id: option.id,
+      name: option.name,
+      countryId: selectedCountry?.id || '',
+      countryName: selectedCountry?.name || '',
+      state: option.sublabel,
+    };
+    setSelectedCity(matched);
+    if (errors.city) {
+      setErrors((prev) => ({ ...prev, city: '' }));
+    }
+  };
 
   // Password strength calculator
   function getPasswordStrength(pass: string) {
@@ -126,8 +232,10 @@ export default function Signup() {
         lastName: lastName.trim(),
         email: email.trim(),
         phone: phone.trim(),
-        city: city.trim(),
-        country: country.trim(),
+        countryId: selectedCountry?.id || undefined,
+        country: selectedCountry?.name || undefined,
+        cityId: selectedCity?.id || undefined,
+        city: selectedCity?.name || undefined,
         additionalInfo: additionalInfo.trim(),
         avatarUrl: photoPreview || undefined,
         password,
@@ -149,6 +257,22 @@ export default function Signup() {
       setLoading(false);
     }
   }
+
+  // Format options for Country Combobox
+  const countryOptions: ComboboxOption[] = countriesList.map((c) => ({
+    id: c.id,
+    name: c.name,
+    flag: c.flag,
+    sublabel: c.region,
+  }));
+
+  // Format options for City Combobox
+  const cityOptions: ComboboxOption[] = citiesList.map((c) => ({
+    id: c.id,
+    name: c.name,
+    sublabel: c.state,
+    icon: <MapPin className="w-3.5 h-3.5" />,
+  }));
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-midnight px-4 py-10">
@@ -341,7 +465,7 @@ export default function Signup() {
                         type="tel"
                         value={phone}
                         onChange={(e) => setPhone(e.target.value)}
-                        placeholder="+1 (555) 019-2834"
+                        placeholder="+91 98765 43210"
                         className="pl-10"
                       />
                     </div>
@@ -426,34 +550,55 @@ export default function Signup() {
                     )}
                   </div>
 
-                  {/* City */}
+                  {/* Country (Searchable Combobox) */}
                   <div>
-                    <Label htmlFor="city">City</Label>
-                    <div className="relative mt-1">
-                      <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/40" aria-hidden />
-                      <Input
-                        id="city"
-                        value={city}
-                        onChange={(e) => setCity(e.target.value)}
-                        placeholder="San Francisco"
-                        className="pl-10"
+                    <Label htmlFor="country-select">Country</Label>
+                    <div className="mt-1">
+                      <LocationCombobox
+                        id="country-select"
+                        placeholder="Select your country"
+                        searchPlaceholder="Search countries..."
+                        options={countryOptions}
+                        value={selectedCountry?.id || ''}
+                        onChange={handleCountrySelect}
+                        loading={loadingCountries}
+                        loadingText="Loading countries..."
+                        error={countriesError}
+                        onRetry={fetchCountries}
+                        icon={<Globe className="w-4 h-4" />}
+                        errorText={errors.country}
                       />
                     </div>
+                    {errors.country && (
+                      <p className="font-sans text-xs text-coral mt-1.5">{errors.country}</p>
+                    )}
                   </div>
 
-                  {/* Country */}
+                  {/* City (Searchable Combobox dependent on Country) */}
                   <div>
-                    <Label htmlFor="country">Country</Label>
-                    <div className="relative mt-1">
-                      <Globe className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/40" aria-hidden />
-                      <Input
-                        id="country"
-                        value={country}
-                        onChange={(e) => setCountry(e.target.value)}
-                        placeholder="United States"
-                        className="pl-10"
+                    <Label htmlFor="city-select">City</Label>
+                    <div className="mt-1">
+                      <LocationCombobox
+                        id="city-select"
+                        placeholder="Search your city..."
+                        searchPlaceholder="Search city name..."
+                        disabled={!selectedCountry}
+                        disabledPlaceholder="Select a country first"
+                        options={cityOptions}
+                        value={selectedCity?.id || ''}
+                        onChange={handleCitySelect}
+                        onSearchChange={handleCitySearchChange}
+                        loading={loadingCities}
+                        loadingText="Searching cities..."
+                        error={citiesError}
+                        onRetry={() => selectedCountry && handleCitySearchChange('')}
+                        icon={<MapPin className="w-4 h-4" />}
+                        errorText={errors.city}
                       />
                     </div>
+                    {errors.city && (
+                      <p className="font-sans text-xs text-coral mt-1.5">{errors.city}</p>
+                    )}
                   </div>
                 </div>
 
