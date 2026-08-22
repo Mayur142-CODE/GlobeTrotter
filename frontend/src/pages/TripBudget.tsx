@@ -341,93 +341,91 @@ export default function TripBudget() {
       </section>
 
       {/* Add Expense Modal */}
-      <Dialog open={addExpenseOpen} onOpenChange={(o) => !o && setAddExpenseOpen(false)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Log a Trip Expense</DialogTitle>
-            <DialogDescription>Add stay, flight, meal, or general expense to this trip.</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleAddExpenseSubmit} className="space-y-4 py-2">
+      <Dialog open={addExpenseOpen} onClose={() => setAddExpenseOpen(false)} className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Log a Trip Expense</DialogTitle>
+          <DialogDescription>Add stay, flight, meal, or general expense to this trip.</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleAddExpenseSubmit} className="space-y-4 px-6 py-2">
+          <div>
+            <Label htmlFor="exp-category">Category</Label>
+            <Select
+              id="exp-category"
+              value={expenseCategory}
+              onChange={(e) => setExpenseCategory(e.target.value as ExpenseCategory)}
+            >
+              <option value="transport">Transport (Flights, Trains, Cabs)</option>
+              <option value="accommodation">Stay / Accommodation (Hotels, Villas)</option>
+              <option value="meals">Meals & Dining</option>
+              <option value="activities">Activities & Entry Tickets</option>
+              <option value="other">Other / Miscellaneous</option>
+            </Select>
+          </div>
+
+          <div>
+            <Label htmlFor="exp-amount">Amount (INR ₹)</Label>
+            <Input
+              id="exp-amount"
+              type="number"
+              min="1"
+              step="any"
+              required
+              placeholder="e.g. 3500"
+              value={expenseAmount}
+              onChange={(e) => setExpenseAmount(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="exp-date">Expense Date</Label>
+            <Input
+              id="exp-date"
+              type="date"
+              required
+              min={trip.startDate}
+              max={trip.endDate}
+              value={expenseDate}
+              onChange={(e) => setExpenseDate(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="exp-desc">Description</Label>
+            <Input
+              id="exp-desc"
+              placeholder="e.g. Flight to Paris, Hotel Booking, Dinner at Bistro"
+              value={expenseDescription}
+              onChange={(e) => setExpenseDescription(e.target.value)}
+            />
+          </div>
+
+          {trip.stops.length > 0 && (
             <div>
-              <Label htmlFor="exp-category">Category</Label>
+              <Label htmlFor="exp-stop">Associate with Stop (Optional)</Label>
               <Select
-                id="exp-category"
-                value={expenseCategory}
-                onChange={(e) => setExpenseCategory(e.target.value as ExpenseCategory)}
+                id="exp-stop"
+                value={expenseStopId}
+                onChange={(e) => setExpenseStopId(e.target.value)}
               >
-                <option value="transport">Transport (Flights, Trains, Cabs)</option>
-                <option value="accommodation">Stay / Accommodation (Hotels, Villas)</option>
-                <option value="meals">Meals & Dining</option>
-                <option value="activities">Activities & Entry Tickets</option>
-                <option value="other">Other / Miscellaneous</option>
+                <option value="">Trip Wide / No specific stop</option>
+                {trip.stops.map((s) => (
+                  <option key={s.id} value={s.id}>
+                    {s.city.name} ({formatDateShort(s.startDate)})
+                  </option>
+                ))}
               </Select>
             </div>
+          )}
 
-            <div>
-              <Label htmlFor="exp-amount">Amount (INR ₹)</Label>
-              <Input
-                id="exp-amount"
-                type="number"
-                min="1"
-                step="any"
-                required
-                placeholder="e.g. 3500"
-                value={expenseAmount}
-                onChange={(e) => setExpenseAmount(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="exp-date">Expense Date</Label>
-              <Input
-                id="exp-date"
-                type="date"
-                required
-                min={trip.startDate}
-                max={trip.endDate}
-                value={expenseDate}
-                onChange={(e) => setExpenseDate(e.target.value)}
-              />
-            </div>
-
-            <div>
-              <Label htmlFor="exp-desc">Description</Label>
-              <Input
-                id="exp-desc"
-                placeholder="e.g. Flight to Paris, Hotel Booking, Dinner at Bistro"
-                value={expenseDescription}
-                onChange={(e) => setExpenseDescription(e.target.value)}
-              />
-            </div>
-
-            {trip.stops.length > 0 && (
-              <div>
-                <Label htmlFor="exp-stop">Associate with Stop (Optional)</Label>
-                <Select
-                  id="exp-stop"
-                  value={expenseStopId}
-                  onChange={(e) => setExpenseStopId(e.target.value)}
-                >
-                  <option value="">Trip Wide / No specific stop</option>
-                  {trip.stops.map((s) => (
-                    <option key={s.id} value={s.id}>
-                      {s.city.name} ({formatDateShort(s.startDate)})
-                    </option>
-                  ))}
-                </Select>
-              </div>
-            )}
-
-            <DialogFooter className="pt-2">
-              <Button type="button" variant="outline" onClick={() => setAddExpenseOpen(false)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={submittingExpense}>
-                {submittingExpense ? 'Saving…' : 'Record Expense'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
+          <DialogFooter className="pt-2">
+            <Button type="button" variant="outline" onClick={() => setAddExpenseOpen(false)} disabled={submittingExpense}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={submittingExpense}>
+              {submittingExpense ? 'Saving…' : 'Record Expense'}
+            </Button>
+          </DialogFooter>
+        </form>
       </Dialog>
 
       {/* Delete Expense Confirm Dialog */}

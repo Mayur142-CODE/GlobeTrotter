@@ -283,6 +283,18 @@ export async function addActivityToStop(
   activity: Activity,
   options?: AddActivityOptions
 ): Promise<Stop | undefined> {
+  // Check if activity is already added to this stop in Supabase
+  const { data: duplicateCheck } = await supabase
+    .from('trip_activities')
+    .select('id')
+    .eq('stop_id', stopId)
+    .eq('activity_id', activity.id)
+    .maybeSingle();
+
+  if (duplicateCheck) {
+    throw new Error('This activity is already added to this stop.');
+  }
+
   const { data: stopData } = await supabase
     .from('trip_stops')
     .select('start_date')
@@ -310,6 +322,9 @@ export async function addActivityToStop(
   });
 
   if (error) {
+    if (error.code === '23505' || error.message?.toLowerCase().includes('duplicate') || error.message?.toLowerCase().includes('unique')) {
+      throw new Error('This activity is already added to this stop.');
+    }
     throw new Error(error.message || 'Failed to add activity to itinerary');
   }
 

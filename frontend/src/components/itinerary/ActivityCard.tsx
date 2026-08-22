@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Clock, Star, Plus, Check, Trash2, Edit2 } from 'lucide-react';
+import { Clock, Star, Plus, Check, Trash2, Edit2, Loader2 } from 'lucide-react';
 import type { Activity } from '@/types/activity';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ interface ActivityCardProps {
   onEdit?: () => void;
   onDelete?: () => void;
   added?: boolean;
+  loading?: boolean;
   index?: number;
 }
 
@@ -22,6 +23,7 @@ export function ActivityCard({
   onEdit,
   onDelete,
   added = false,
+  loading = false,
   index = 0,
 }: ActivityCardProps) {
   return (
@@ -87,11 +89,16 @@ export function ActivityCard({
                 Remove
               </Button>
             ) : (
-              <Button variant="outline" size="sm" disabled>
-                <Check className="w-4 h-4" aria-hidden />
+              <Button variant="outline" size="sm" disabled className="bg-parchment-200/50 text-teal border-teal/40 font-medium cursor-not-allowed">
+                <Check className="w-4 h-4 text-teal" aria-hidden />
                 Added
               </Button>
             )
+          ) : loading ? (
+            <Button variant="primary" size="sm" disabled className="opacity-80">
+              <Loader2 className="w-4 h-4 animate-spin" aria-hidden />
+              Adding…
+            </Button>
           ) : (
             onAdd && (
               <Button variant="primary" size="sm" onClick={onAdd}>

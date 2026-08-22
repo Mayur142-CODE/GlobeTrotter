@@ -45,6 +45,15 @@ export default function ManageUsers() {
     loadUsers();
   }, [search]);
 
+  useEffect(() => {
+    if (!selectedUser) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelectedUser(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [selectedUser]);
+
   const loadUsers = async () => {
     setLoading(true);
     try {

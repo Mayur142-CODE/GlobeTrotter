@@ -45,7 +45,6 @@ import {
   DialogHeader,
   DialogTitle,
   DialogDescription,
-  DialogContent,
   DialogFooter,
 } from '@/components/ui/dialog';
 import { StopCard } from '@/components/itinerary/StopCard';
@@ -99,61 +98,63 @@ export default function ItineraryBuilder() {
       const updatedStops = await reorderStops(tripId, reordered.map((s) => s.id));
       setStops(updatedStops);
       toast({
-        title: 'Itinerary reordered',
-        description: 'Sequential dates recalculated and saved to Supabase.',
+        title: 'Timeline re-sequenced',
+        description: 'Stop orders and dates automatically updated.',
         variant: 'success',
       });
     } catch (err: any) {
       toast({
         title: 'Reorder error',
-        description: err?.message || 'Could not save new stop order.',
+        description: err?.message || 'Could not re-sequence timeline.',
         variant: 'error',
       });
-      await loadTrip();
+      loadTrip();
     }
   }
 
-  async function handleAddStop(city: City, startDate: string, endDate: string) {
-    if (!tripId) return;
+  async function handleAddStop(city: City, startDate: string, endDate: string): Promise<boolean> {
+    if (!tripId) return false;
     try {
-      const newStop = await addStop(tripId, { cityId: city.id, startDate, endDate });
-      if (newStop) {
-        setStops((prev) => [...prev, newStop]);
-        toast({
-          title: 'Stop added',
-          description: `${city.name} (${formatDateShort(startDate)} — ${formatDateShort(endDate)}) added to itinerary.`,
-          variant: 'success',
-        });
-      }
+      const newStop = await addStop(tripId, city, startDate, endDate);
+      setStops((prev) => [...prev, newStop]);
       setAddStopOpen(false);
+      toast({
+        title: 'Stop added',
+        description: `${city.name} added to your itinerary.`,
+        variant: 'success',
+      });
       await loadTrip();
+      return true;
     } catch (err: any) {
       toast({
-        title: 'Failed to add stop',
-        description: err?.message || 'Error creating stop.',
+        title: 'Error adding stop',
+        description: err?.message || 'Could not add stop.',
         variant: 'error',
       });
+      return false;
     }
   }
 
-  async function handleSaveEditedStop(stopId: string, endDate: string, notes?: string) {
-    if (!tripId) return;
+  async function handleSaveEditedStop(stopId: string, endDate: string, notes?: string): Promise<boolean> {
+    if (!tripId) return false;
     try {
       const updatedStops = await updateStop(tripId, stopId, { endDate, notes });
       setStops(updatedStops);
       setEditingStop(null);
       toast({
         title: 'Stop updated',
-        description: 'Dates and continuous timeline updated successfully.',
+        description: 'Departure date adjusted and following stops re-sequenced.',
         variant: 'success',
       });
       await loadTrip();
+      return true;
     } catch (err: any) {
       toast({
         title: 'Update failed',
-        description: err?.message || 'Could not update stop dates.',
+        description: err?.message || 'Could not update stop timeline.',
         variant: 'error',
       });
+      return false;
     }
   }
 
@@ -179,8 +180,8 @@ export default function ItineraryBuilder() {
     }
   }
 
-  async function handleAddActivity(activity: Activity, stop: Stop) {
-    if (!tripId) return;
+  async function handleAddActivity(activity: Activity, stop: Stop): Promise<boolean> {
+    if (!tripId) return false;
     try {
       const updated = await addActivityToStop(tripId, stop.id, activity, {
         scheduledDate: stop.startDate,
@@ -189,9 +190,12 @@ export default function ItineraryBuilder() {
       if (updated) {
         setStops((prev) => prev.map((s) => (s.id === stop.id ? updated : s)));
         toast({ title: 'Activity added', description: `${activity.name} added to ${stop.city.name}.`, variant: 'success' });
+        return true;
       }
+      return false;
     } catch (err: any) {
       toast({ title: 'Error adding activity', description: err?.message || 'Could not add activity.', variant: 'error' });
+      return false;
     }
   }
 
@@ -261,31 +265,49 @@ export default function ItineraryBuilder() {
       <PageContainer>
         <EmptyState
           title="Trip not found"
-          description="This trip could not be loaded or may have been deleted."
-          action={<Button onClick={() => navigate('/trips')}>Back to My Trips</Button>}
+          description="The itinerary you are looking for does not exist or has been removed."
+          actionLabel="Back to Trips"
+          onAction={() => navigate('/trips')}
         />
       </PageContainer>
     );
   }
 
-  const days = Math.max(1, daysBetween(trip.startDate, trip.endDate));
-  const totalCost = trip.budget.total;
+  const totalActivities = stops.reduce((sum, s) => sum + (s.activities?.length || 0), 0);
+  const totalCost = stops.reduce(
+    (sum, s) => sum + (s.activities || []).reduce((aSum, a) => aSum + (a.price || 0), 0),
+    0
+  );
+  const tripDays = Math.max(1, daysBetween(trip.startDate, trip.endDate));
 
   return (
     <PageContainer>
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-        <button
-          onClick={() => navigate('/trips')}
-          className="flex items-center gap-1.5 font-sans text-sm text-ink/60 hover:text-teal focus-ring rounded"
-        >
-          <ArrowLeft className="w-4 h-4" aria-hidden /> Back to trips
-        </button>
-        <div className="flex flex-wrap gap-2">
+      {/* Top Header & Quick Actions */}
+      <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div>
+          <button
+            onClick={() => navigate('/trips')}
+            className="font-sans text-xs text-ink/60 hover:text-teal flex items-center gap-1.5 mb-2 focus-ring rounded"
+          >
+            <ArrowLeft className="w-3.5 h-3.5" /> Back to My Trips
+          </button>
+          <div className="flex items-center gap-3">
+            <h1 className="font-serif text-2xl sm:text-3xl font-bold text-midnight">{trip.name}</h1>
+            <Badge variant={trip.status === 'upcoming' ? 'teal' : 'gold'}>{trip.status}</Badge>
+          </div>
+          <p className="font-sans text-xs text-ink/60 mt-1 flex items-center gap-2">
+            <Calendar className="w-3.5 h-3.5 text-teal" />
+            <span className="ticket-mono">{formatDateShort(trip.startDate)} — {formatDateShort(trip.endDate)}</span>
+            <span>({tripDays} days)</span>
+          </p>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-2">
           <Button variant="outline" size="sm" onClick={() => navigate(`/itinerary/${trip.id}/view`)}>
-            <Eye className="w-4 h-4 mr-1.5" /> View Mode
+            <Eye className="w-4 h-4 mr-1.5" /> Preview View
           </Button>
           <Button variant="outline" size="sm" onClick={() => navigate(`/trip/${trip.id}/budget`)}>
-            <Wallet className="w-4 h-4 mr-1.5" /> Budget
+            <Wallet className="w-4 h-4 mr-1.5" /> Budget ({formatCurrency(totalCost)})
           </Button>
           <Button variant="outline" size="sm" onClick={() => navigate(`/trip/${trip.id}/calendar`)}>
             <Calendar className="w-4 h-4 mr-1.5" /> Calendar
@@ -294,95 +316,81 @@ export default function ItineraryBuilder() {
             <Share2 className="w-4 h-4 mr-1.5" /> Share
           </Button>
           <Button variant="primary" size="sm" onClick={() => setAddStopOpen(true)}>
-            <PlusCircle className="w-4 h-4 mr-1.5" aria-hidden /> Add Stop
+            <PlusCircle className="w-4 h-4 mr-1.5" /> Add Stop
           </Button>
         </div>
       </div>
 
-      {/* Trip header */}
-      <div className="boarding-pass overflow-hidden mb-6">
-        <div className="relative h-40 sm:h-48">
-          <img src={trip.coverPhotoUrl} alt={trip.name} className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-t from-midnight/80 via-midnight/30 to-transparent" />
-          <div className="absolute bottom-3 left-5 right-5">
-            <h1 className="font-serif text-2xl sm:text-3xl font-semibold text-parchment-50">{trip.name}</h1>
-          </div>
+      {/* Summary Highlights */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-8">
+        <div className="boarding-pass p-3 text-center">
+          <p className="ticket-mono text-[10px] text-ink/50 uppercase">Destinations</p>
+          <p className="font-serif text-xl font-bold text-midnight mt-0.5">{stops.length} Cities</p>
         </div>
-        <div className="p-5">
-          <p className="font-sans text-sm text-ink/60 mb-4">{trip.description}</p>
-          <div className="flex flex-wrap gap-4">
-            <div className="flex items-center gap-1.5 text-sm">
-              <Calendar className="w-4 h-4 text-teal" aria-hidden />
-              <span className="ticket-mono text-midnight">
-                {formatDateShort(trip.startDate)} — {formatDateShort(trip.endDate)}
-              </span>
-            </div>
-            <div className="flex items-center gap-1.5 text-sm">
-              <MapPin className="w-4 h-4 text-teal" aria-hidden />
-              <span className="ticket-mono text-midnight">{stops.length} stops</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-sm">
-              <Calendar className="w-4 h-4 text-teal" aria-hidden />
-              <span className="ticket-mono text-midnight">{days} days</span>
-            </div>
-            <div className="flex items-center gap-1.5 text-sm">
-              <Wallet className="w-4 h-4 text-teal" aria-hidden />
-              <span className="ticket-mono text-midnight">{formatCurrency(totalCost)}</span>
-            </div>
-          </div>
+        <div className="boarding-pass p-3 text-center">
+          <p className="ticket-mono text-[10px] text-ink/50 uppercase">Activities</p>
+          <p className="font-serif text-xl font-bold text-midnight mt-0.5">{totalActivities} Experiences</p>
+        </div>
+        <div className="boarding-pass p-3 text-center">
+          <p className="ticket-mono text-[10px] text-ink/50 uppercase">Est. Expenses</p>
+          <p className="font-serif text-xl font-bold text-teal mt-0.5">{formatCurrency(totalCost)}</p>
+        </div>
+        <div className="boarding-pass p-3 text-center">
+          <p className="ticket-mono text-[10px] text-ink/50 uppercase">Budget Ceiling</p>
+          <p className="font-serif text-xl font-bold text-midnight mt-0.5">
+            {trip.budget?.total ? formatCurrency(trip.budget.total) : 'None'}
+          </p>
         </div>
       </div>
 
-      {/* Flight path */}
-      {stops.length > 0 && (
-        <div className="boarding-pass p-6 mb-6">
-          <h2 className="font-serif text-lg font-semibold text-midnight mb-4 text-center">Continuous Journey Route</h2>
-          <FlightPathLine
-            stops={stops.map((s) => ({ id: s.id, label: s.city.name, sublabel: `${formatDateShort(s.startDate)} - ${formatDateShort(s.endDate)}` }))}
-            variant="light"
-          />
+      {/* Flight Path Summary */}
+      {stops.length > 1 && (
+        <div className="mb-8 boarding-pass p-4">
+          <h2 className="font-serif text-sm font-semibold text-midnight mb-3">Multi-City Routing Timeline</h2>
+          <FlightPathLine stops={stops} />
         </div>
       )}
 
-      {/* Stops list with Delete Stop & Delete Activity actions */}
-      <div className="flex items-center justify-between mb-4">
-        <div>
-          <h2 className="font-serif text-xl font-semibold text-midnight">Sequential Stops & Itinerary Timeline</h2>
-          <p className="font-sans text-xs text-ink/50">Drag stops to reorder; dates automatically update continuously</p>
+      {/* Sequential Stops Timeline */}
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <h2 className="font-serif text-lg font-bold text-midnight flex items-center gap-2">
+            <MapPin className="w-5 h-5 text-teal" /> Multi-City Itinerary Timeline
+          </h2>
+          <span className="font-sans text-xs text-ink/50">Drag stops to re-sequence timeline</span>
         </div>
-        <Button onClick={() => setAddStopOpen(true)}>
-          <PlusCircle className="w-4 h-4 mr-1.5" aria-hidden /> Add Stop
-        </Button>
-      </div>
 
-      {stops.length === 0 ? (
-        <EmptyState
-          icon={MapPin}
-          title="No stops added yet"
-          description={`Your journey starts on ${formatDateShort(trip.startDate)}. Add your first destination.`}
-          action={
-            <Button onClick={() => setAddStopOpen(true)}>
-              <PlusCircle className="w-4 h-4 mr-1.5" aria-hidden /> Add first stop
+        {stops.length === 0 ? (
+          <div className="boarding-pass p-12 text-center border-dashed">
+            <MapPin className="w-12 h-12 text-teal/40 mx-auto mb-3" />
+            <h3 className="font-serif text-lg font-bold text-midnight">No Stops Added Yet</h3>
+            <p className="font-sans text-xs text-ink/60 max-w-sm mx-auto mt-1 mb-4">
+              Add your first city stop. Stops are automatically calculated sequentially from your trip dates.
+            </p>
+            <Button variant="primary" onClick={() => setAddStopOpen(true)}>
+              <PlusCircle className="w-4 h-4 mr-1.5" /> Add First Stop
             </Button>
-          }
-        />
-      ) : (
-        <Reorder.Group axis="y" values={stops} onReorder={handleReorder} className="space-y-4">
-          {stops.map((stop, i) => (
-            <Reorder.Item key={stop.id} value={stop}>
-              <StopCard
-                stop={stop}
-                index={i}
-                draggable
-                onEdit={() => setEditingStop(stop)}
-                onRemove={() => setDeletingStopId(stop.id)}
-                onAddActivity={() => setAddActivityForStop(stop)}
-                onActivityRemove={(actId) => handleRemoveActivity(stop.id, actId)}
-              />
-            </Reorder.Item>
-          ))}
-        </Reorder.Group>
-      )}
+          </div>
+        ) : (
+          <Reorder.Group axis="y" values={stops} onReorder={handleReorder} className="space-y-6">
+            {stops.map((stop, index) => (
+              <Reorder.Item key={stop.id} value={stop} className="cursor-grab active:cursor-grabbing">
+                <StopCard
+                  stop={stop}
+                  index={index}
+                  totalStops={stops.length}
+                  tripStart={trip.startDate}
+                  tripEnd={trip.endDate}
+                  onAddActivity={() => setAddActivityForStop(stop)}
+                  onEditStop={() => setEditingStop(stop)}
+                  onDeleteStop={() => setDeletingStopId(stop.id)}
+                  onRemoveActivity={(actId) => handleRemoveActivity(stop.id, actId)}
+                />
+              </Reorder.Item>
+            ))}
+          </Reorder.Group>
+        )}
+      </div>
 
       {/* Add Stop Dialog */}
       <AddStopDialog
@@ -411,49 +419,48 @@ export default function ItineraryBuilder() {
         stop={addActivityForStop}
         onClose={() => setAddActivityForStop(null)}
         onAdd={(activity) => {
-          if (addActivityForStop) handleAddActivity(activity, addActivityForStop);
+          if (!addActivityForStop) return Promise.resolve(false);
+          return handleAddActivity(activity, addActivityForStop);
         }}
       />
 
       {/* Share Trip Modal */}
-      <Dialog open={shareOpen} onOpenChange={(o) => !o && setShareOpen(false)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Share Trip Itinerary</DialogTitle>
-            <DialogDescription>
-              Share your travel itinerary with friends, family, or fellow travelers.
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-3">
-            <div className="flex items-center justify-between p-3 rounded-lg bg-parchment-100/60 border border-parchment-300">
-              <div>
-                <p className="font-sans text-sm font-semibold text-midnight">Public Visibility</p>
-                <p className="font-sans text-xs text-ink/60">Allow anyone with the link to view this itinerary</p>
-              </div>
-              <input
-                type="checkbox"
-                checked={trip.status === 'completed' || !!(trip as any).is_public}
-                onChange={(e) => handleTogglePublic(e.target.checked)}
-                className="w-5 h-5 accent-teal rounded cursor-pointer"
-              />
-            </div>
-
+      <Dialog open={shareOpen} onClose={() => setShareOpen(false)} className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Share Trip Itinerary</DialogTitle>
+          <DialogDescription>
+            Share your travel itinerary with friends, family, or fellow travelers.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="px-6 py-3 space-y-4">
+          <div className="flex items-center justify-between p-3 rounded-lg bg-parchment-100/60 border border-parchment-300">
             <div>
-              <Label htmlFor="share-link-input">Public Itinerary URL</Label>
-              <div className="flex gap-2 mt-1.5">
-                <Input id="share-link-input" value={shareUrl} readOnly className="ticket-mono text-xs bg-parchment-200/40 text-ink/70" />
-                <Button variant="primary" size="sm" onClick={handleCopyShareLink}>
-                  {copiedLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
-                </Button>
-              </div>
+              <p className="font-sans text-sm font-semibold text-midnight">Public Visibility</p>
+              <p className="font-sans text-xs text-ink/60">Allow anyone with the link to view this itinerary</p>
+            </div>
+            <input
+              type="checkbox"
+              checked={trip.status === 'completed' || !!(trip as any).is_public}
+              onChange={(e) => handleTogglePublic(e.target.checked)}
+              className="w-5 h-5 accent-teal rounded cursor-pointer"
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="share-link-input">Public Itinerary URL</Label>
+            <div className="flex gap-2 mt-1.5">
+              <Input id="share-link-input" value={shareUrl} readOnly className="ticket-mono text-xs bg-parchment-200/40 text-ink/70" />
+              <Button variant="primary" size="sm" onClick={handleCopyShareLink}>
+                {copiedLink ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+              </Button>
             </div>
           </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setShareOpen(false)}>
-              Close
-            </Button>
-          </DialogFooter>
-        </DialogContent>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => setShareOpen(false)}>
+            Close
+          </Button>
+        </DialogFooter>
       </Dialog>
 
       {/* Confirm Delete Stop Modal */}
@@ -485,12 +492,13 @@ function AddStopDialog({
   tripEnd: string;
   existingStops: Stop[];
   onClose: () => void;
-  onAdd: (city: City, start: string, end: string) => void;
+  onAdd: (city: City, start: string, end: string) => Promise<boolean> | void;
 }) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<City[]>([]);
   const [searching, setSearching] = useState(false);
   const [selected, setSelected] = useState<City | null>(null);
+  const [submitting, setSubmitting] = useState(false);
 
   // Locked arrival date calculated automatically
   const arrivalDate = getNextStopArrival(tripStart, existingStops);
@@ -506,15 +514,16 @@ function AddStopDialog({
       setSelected(null);
       setError('');
       setResults([]);
+      setSubmitting(false);
     } else {
       const nextArr = getNextStopArrival(tripStart, existingStops);
-      // Default departure date to nextArr or tripEnd
       setDepartureDate(nextArr);
       setError('');
     }
   }, [open, tripStart, tripEnd, existingStops]);
 
   useEffect(() => {
+    if (!open) return;
     if (!query.trim()) {
       searchCities('', { sortBy: 'popularity' }).then(setResults);
       return;
@@ -524,9 +533,9 @@ function AddStopDialog({
       setResults(res);
       setSearching(false);
     });
-  }, [query]);
+  }, [query, open]);
 
-  function handleAdd() {
+  async function handleAdd() {
     if (!selected) {
       setError('Please select a destination city.');
       return;
@@ -545,133 +554,139 @@ function AddStopDialog({
       return;
     }
 
-    onAdd(selected, arrivalDate, departureDate);
+    setSubmitting(true);
+    try {
+      await onAdd(selected, arrivalDate, departureDate);
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || 'Could not add stop.');
+    } finally {
+      setSubmitting(false);
+    }
   }
 
   return (
-    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Add a Stop</DialogTitle>
-          <DialogDescription>
-            {isFirstStop
-              ? `First stop begins on trip start (${formatDateShort(tripStart)}).`
-              : `Stop continues sequentially from ${previousStop?.city.name} (${formatDateShort(arrivalDate)}).`}
-          </DialogDescription>
-        </DialogHeader>
+    <Dialog open={open} onClose={onClose} className="max-w-md">
+      <DialogHeader>
+        <DialogTitle>Add a Stop</DialogTitle>
+        <DialogDescription>
+          {isFirstStop
+            ? `First stop begins on trip start (${formatDateShort(tripStart)}).`
+            : `Stop continues sequentially from ${previousStop?.city.name} (${formatDateShort(arrivalDate)}).`}
+        </DialogDescription>
+      </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          {!selected ? (
+      <div className="px-6 py-2 space-y-4">
+        {!selected ? (
+          <div>
+            <Label htmlFor="search-city">Search City / Destination</Label>
+            <div className="relative mt-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/40" />
+              <Input
+                id="search-city"
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="e.g. Paris, Tokyo, Mumbai, Kyoto…"
+                className="pl-10"
+              />
+            </div>
+            {searching && <p className="font-sans text-xs text-ink/50 mt-2">Searching cities…</p>}
+            {results.length > 0 && (
+              <ul className="mt-2 border border-parchment-300 rounded-lg max-h-44 overflow-y-auto divide-y divide-parchment-200 bg-parchment-50">
+                {results.map((c) => (
+                  <li key={c.id}>
+                    <button
+                      type="button"
+                      onClick={() => setSelected(c)}
+                      className="w-full text-left px-3 py-2 hover:bg-parchment-200/60 transition-colors flex items-center justify-between"
+                    >
+                      <div>
+                        <span className="font-sans text-sm font-medium text-midnight">{c.name}</span>
+                        <span className="font-sans text-xs text-ink/50 block">{c.country}</span>
+                      </div>
+                      <Badge variant="secondary" className="text-[10px]">{c.region}</Badge>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </div>
+        ) : (
+          <div className="p-3 rounded-lg bg-teal/10 border border-teal/20 flex items-center justify-between">
             <div>
-              <Label htmlFor="search-city">Search City / Destination</Label>
-              <div className="relative mt-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/40" />
-                <Input
-                  id="search-city"
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  placeholder="e.g. Paris, Tokyo, Mumbai, Kyoto…"
-                  className="pl-10"
-                />
-              </div>
-              {searching && <p className="font-sans text-xs text-ink/50 mt-2">Searching cities…</p>}
-              {results.length > 0 && (
-                <ul className="mt-2 border border-parchment-300 rounded-lg max-h-44 overflow-y-auto divide-y divide-parchment-200 bg-parchment-50">
-                  {results.map((c) => (
-                    <li key={c.id}>
-                      <button
-                        type="button"
-                        onClick={() => setSelected(c)}
-                        className="w-full text-left px-3 py-2 hover:bg-parchment-200/60 transition-colors flex items-center justify-between"
-                      >
-                        <div>
-                          <span className="font-sans text-sm font-medium text-midnight">{c.name}</span>
-                          <span className="font-sans text-xs text-ink/50 block">{c.country}</span>
-                        </div>
-                        <Badge variant="secondary" className="text-[10px]">{c.region}</Badge>
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
+              <p className="font-serif text-sm font-semibold text-midnight">{selected.name}</p>
+              <p className="ticket-mono text-xs text-ink/60">{selected.country}</p>
             </div>
-          ) : (
-            <div className="p-3 rounded-lg bg-teal/10 border border-teal/20 flex items-center justify-between">
+            <Button variant="ghost" size="sm" onClick={() => setSelected(null)}>
+              Change City
+            </Button>
+          </div>
+        )}
+
+        {selected && (
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-3">
               <div>
-                <p className="font-serif text-sm font-semibold text-midnight">{selected.name}</p>
-                <p className="ticket-mono text-xs text-ink/60">{selected.country}</p>
-              </div>
-              <Button variant="ghost" size="sm" onClick={() => setSelected(null)}>
-                Change City
-              </Button>
-            </div>
-          )}
-
-          {selected && (
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <div className="flex items-center gap-1 mb-1">
-                    <Label htmlFor="stop-start">Arrival Date</Label>
-                    <Lock className="w-3 h-3 text-ink/40" title="Locked by sequence" />
-                  </div>
-                  <Input
-                    id="stop-start"
-                    type="date"
-                    value={arrivalDate}
-                    disabled
-                    readOnly
-                    className="bg-parchment-200/60 text-ink/80 font-mono text-xs cursor-not-allowed"
-                  />
-                  <p className="text-[10px] text-ink/50 mt-1">
-                    {isFirstStop
-                      ? 'Trip Start Date'
-                      : `From previous stop departure`}
-                  </p>
+                <div className="flex items-center gap-1 mb-1">
+                  <Label htmlFor="stop-start">Arrival Date</Label>
+                  <Lock className="w-3 h-3 text-ink/40" title="Locked by sequence" />
                 </div>
-                <div>
-                  <Label htmlFor="stop-end" className="mb-1 block">Departure Date</Label>
-                  <Input
-                    id="stop-end"
-                    type="date"
-                    value={departureDate}
-                    min={arrivalDate}
-                    max={tripEnd}
-                    onChange={(e) => {
-                      setDepartureDate(e.target.value);
-                      setError('');
-                    }}
-                    className="font-mono text-xs"
-                  />
-                  <p className="text-[10px] text-ink/50 mt-1">
-                    Max: {formatDateShort(tripEnd)}
-                  </p>
-                </div>
+                <Input
+                  id="stop-start"
+                  type="date"
+                  value={arrivalDate}
+                  disabled
+                  readOnly
+                  className="bg-parchment-200/60 text-ink/80 font-mono text-xs cursor-not-allowed"
+                />
+                <p className="text-[10px] text-ink/50 mt-1">
+                  {isFirstStop
+                    ? 'Trip Start Date'
+                    : `From previous stop departure`}
+                </p>
               </div>
-
-              <div className="rounded-lg bg-parchment-100/70 p-2.5 border border-parchment-300/60 flex items-start gap-2 text-xs text-ink/70">
-                <Info className="w-4 h-4 text-teal shrink-0 mt-0.5" />
-                <span>
-                  Stay length:{' '}
-                  <strong>{Math.max(1, diffDays(arrivalDate, departureDate))} day(s)</strong> (
-                  {formatDateShort(arrivalDate)} to {formatDateShort(departureDate)}).
-                </span>
+              <div>
+                <Label htmlFor="stop-end" className="mb-1 block">Departure Date</Label>
+                <Input
+                  id="stop-end"
+                  type="date"
+                  value={departureDate}
+                  min={arrivalDate}
+                  max={tripEnd}
+                  onChange={(e) => {
+                    setDepartureDate(e.target.value);
+                    setError('');
+                  }}
+                  className="font-mono text-xs"
+                />
+                <p className="text-[10px] text-ink/50 mt-1">
+                  Max: {formatDateShort(tripEnd)}
+                </p>
               </div>
             </div>
-          )}
 
-          {error && <p className="font-sans text-xs text-coral font-medium">{error}</p>}
-        </div>
+            <div className="rounded-lg bg-parchment-100/70 p-2.5 border border-parchment-300/60 flex items-start gap-2 text-xs text-ink/70">
+              <Info className="w-4 h-4 text-teal shrink-0 mt-0.5" />
+              <span>
+                Stay length:{' '}
+                <strong>{Math.max(1, diffDays(arrivalDate, departureDate))} day(s)</strong> (
+                {formatDateShort(arrivalDate)} to {formatDateShort(departureDate)}).
+              </span>
+            </div>
+          </div>
+        )}
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button disabled={!selected} onClick={handleAdd}>
-            Add Stop
-          </Button>
-        </DialogFooter>
-      </DialogContent>
+        {error && <p className="font-sans text-xs text-coral font-medium">{error}</p>}
+      </div>
+
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose} disabled={submitting}>
+          Cancel
+        </Button>
+        <Button disabled={!selected || submitting} onClick={handleAdd}>
+          {submitting ? 'Adding Stop…' : 'Add Stop'}
+        </Button>
+      </DialogFooter>
     </Dialog>
   );
 }
@@ -692,16 +707,17 @@ function EditStopDialog({
   tripEnd: string;
   stops: Stop[];
   onClose: () => void;
-  onSave: (stopId: string, endDate: string, notes?: string) => void;
+  onSave: (stopId: string, endDate: string, notes?: string) => Promise<boolean> | void;
 }) {
   const [departureDate, setDepartureDate] = useState(stop.endDate);
   const [notes, setNotes] = useState(stop.notes || '');
   const [error, setError] = useState('');
+  const [saving, setSaving] = useState(false);
 
   const stopIndex = stops.findIndex((s) => s.id === stop.id);
   const isFirstStop = stopIndex === 0;
 
-  function handleSave() {
+  async function handleSave() {
     if (!departureDate) {
       setError('Please select a departure date.');
       return;
@@ -715,84 +731,93 @@ function EditStopDialog({
       return;
     }
 
-    onSave(stop.id, departureDate, notes);
+    setSaving(true);
+    try {
+      await onSave(stop.id, departureDate, notes);
+      onClose();
+    } catch (err: any) {
+      setError(err?.message || 'Could not save changes.');
+    } finally {
+      setSaving(false);
+    }
   }
 
   return (
-    <Dialog open={!!stop} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-md">
-        <DialogHeader>
-          <DialogTitle>Edit Stop: {stop.city.name}</DialogTitle>
-          <DialogDescription>
-            Modify departure date. Following stops will automatically re-sequence to maintain a continuous timeline.
-          </DialogDescription>
-        </DialogHeader>
+    <Dialog open={!!stop} onClose={onClose} className="max-w-md">
+      <DialogHeader>
+        <DialogTitle>Edit Stop: {stop.city.name}</DialogTitle>
+        <DialogDescription>
+          Modify departure date. Following stops will automatically re-sequence to maintain a continuous timeline.
+        </DialogDescription>
+      </DialogHeader>
 
-        <div className="space-y-4 py-2">
-          <div className="grid grid-cols-2 gap-3">
-            <div>
-              <div className="flex items-center gap-1 mb-1">
-                <Label htmlFor="edit-stop-start">Arrival Date</Label>
-                <Lock className="w-3 h-3 text-ink/40" />
-              </div>
-              <Input
-                id="edit-stop-start"
-                type="date"
-                value={stop.startDate}
-                disabled
-                readOnly
-                className="bg-parchment-200/60 text-ink/80 font-mono text-xs cursor-not-allowed"
-              />
-              <p className="text-[10px] text-ink/50 mt-1">
-                {isFirstStop ? 'Trip Start Date' : 'From previous stop'}
-              </p>
-            </div>
-            <div>
-              <Label htmlFor="edit-stop-end" className="mb-1 block">Departure Date</Label>
-              <Input
-                id="edit-stop-end"
-                type="date"
-                value={departureDate}
-                min={stop.startDate}
-                max={tripEnd}
-                onChange={(e) => {
-                  setDepartureDate(e.target.value);
-                  setError('');
-                }}
-                className="font-mono text-xs"
-              />
-              <p className="text-[10px] text-ink/50 mt-1">Max: {formatDateShort(tripEnd)}</p>
-            </div>
-          </div>
-
+      <div className="px-6 py-2 space-y-4">
+        <div className="grid grid-cols-2 gap-3">
           <div>
-            <Label htmlFor="edit-stop-notes">Stop Notes / Accommodation</Label>
-            <Textarea
-              id="edit-stop-notes"
-              value={notes}
-              onChange={(e) => setNotes(e.target.value)}
-              placeholder="e.g. Hotel reservation, neighborhoods to explore…"
-              rows={3}
-              className="mt-1"
+            <div className="flex items-center gap-1 mb-1">
+              <Label htmlFor="edit-stop-start">Arrival Date</Label>
+              <Lock className="w-3 h-3 text-ink/40" />
+            </div>
+            <Input
+              id="edit-stop-start"
+              type="date"
+              value={stop.startDate}
+              disabled
+              readOnly
+              className="bg-parchment-200/60 text-ink/80 font-mono text-xs cursor-not-allowed"
             />
+            <p className="text-[10px] text-ink/50 mt-1">
+              {isFirstStop ? 'Trip Start Date' : 'From previous stop'}
+            </p>
           </div>
-
-          {error && <p className="font-sans text-xs text-coral font-medium">{error}</p>}
+          <div>
+            <Label htmlFor="edit-stop-end" className="mb-1 block">Departure Date</Label>
+            <Input
+              id="edit-stop-end"
+              type="date"
+              value={departureDate}
+              min={stop.startDate}
+              max={tripEnd}
+              onChange={(e) => {
+                setDepartureDate(e.target.value);
+                setError('');
+              }}
+              className="font-mono text-xs"
+            />
+            <p className="text-[10px] text-ink/50 mt-1">Max: {formatDateShort(tripEnd)}</p>
+          </div>
         </div>
 
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button onClick={handleSave}>
-            Save Changes
-          </Button>
-        </DialogFooter>
-      </DialogContent>
+        <div>
+          <Label htmlFor="edit-stop-notes">Stop Notes / Accommodation</Label>
+          <Textarea
+            id="edit-stop-notes"
+            value={notes}
+            onChange={(e) => setNotes(e.target.value)}
+            placeholder="e.g. Hotel reservation, neighborhoods to explore…"
+            rows={3}
+            className="mt-1"
+          />
+        </div>
+
+        {error && <p className="font-sans text-xs text-coral font-medium">{error}</p>}
+      </div>
+
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose} disabled={saving}>
+          Cancel
+        </Button>
+        <Button onClick={handleSave} disabled={saving}>
+          {saving ? 'Saving…' : 'Save Changes'}
+        </Button>
+      </DialogFooter>
     </Dialog>
   );
 }
 
+/**
+ * Add Activity Dialog with immediate database insert, loading state, duplicate prevention, and auto-close
+ */
 function AddActivityDialog({
   stop,
   onClose,
@@ -800,14 +825,16 @@ function AddActivityDialog({
 }: {
   stop: Stop | null;
   onClose: () => void;
-  onAdd: (activity: Activity) => void;
+  onAdd: (activity: Activity) => Promise<boolean>;
 }) {
   const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(false);
+  const [addingActivityId, setAddingActivityId] = useState<string | null>(null);
 
   useEffect(() => {
     if (!stop) {
       setActivities([]);
+      setAddingActivityId(null);
       return;
     }
     setLoading(true);
@@ -819,41 +846,55 @@ function AddActivityDialog({
 
   if (!stop) return null;
 
+  const handleAddClick = async (act: Activity) => {
+    if (addingActivityId) return;
+    setAddingActivityId(act.id);
+    try {
+      const success = await onAdd(act);
+      if (success) {
+        onClose();
+      }
+    } finally {
+      setAddingActivityId(null);
+    }
+  };
+
   return (
-    <Dialog open={!!stop} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-w-xl max-h-[85vh] flex flex-col">
-        <DialogHeader>
-          <DialogTitle>Add Experience to {stop.city.name}</DialogTitle>
-          <DialogDescription>Choose curated activities from Supabase catalog for {stop.city.name}.</DialogDescription>
-        </DialogHeader>
-        <div className="flex-1 overflow-y-auto space-y-3 py-2">
-          {loading ? (
-            <p className="font-sans text-sm text-ink/50 text-center py-6">Loading activities from catalog…</p>
-          ) : activities.length === 0 ? (
-            <EmptyState
-              title="No activities found"
-              description={`No catalog activities for ${stop.city.name} yet.`}
-            />
-          ) : (
-            activities.map((act) => {
-              const added = stop.activities.some((a) => a.id === act.id);
-              return (
-                <ActivityCard
-                  key={act.id}
-                  activity={act}
-                  added={added}
-                  onAdd={() => onAdd(act)}
-                />
-              );
-            })
-          )}
-        </div>
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Done
-          </Button>
-        </DialogFooter>
-      </DialogContent>
+    <Dialog open={!!stop} onClose={onClose} className="max-w-xl max-h-[85vh] flex flex-col overflow-hidden">
+      <DialogHeader>
+        <DialogTitle>Add Experience to {stop.city.name}</DialogTitle>
+        <DialogDescription>Choose curated activities from Supabase catalog for {stop.city.name}.</DialogDescription>
+      </DialogHeader>
+
+      <div className="flex-1 overflow-y-auto px-6 py-2 space-y-3">
+        {loading ? (
+          <p className="font-sans text-sm text-ink/50 text-center py-8">Loading activities from catalog…</p>
+        ) : activities.length === 0 ? (
+          <EmptyState
+            title="No activities found"
+            description={`No catalog activities for ${stop.city.name} yet.`}
+          />
+        ) : (
+          activities.map((act) => {
+            const added = (stop.activities || []).some((a) => a.id === act.id || a.name === act.name);
+            return (
+              <ActivityCard
+                key={act.id}
+                activity={act}
+                added={added}
+                loading={addingActivityId === act.id}
+                onAdd={() => handleAddClick(act)}
+              />
+            );
+          })
+        )}
+      </div>
+
+      <DialogFooter>
+        <Button variant="outline" onClick={onClose}>
+          Done
+        </Button>
+      </DialogFooter>
     </Dialog>
   );
 }

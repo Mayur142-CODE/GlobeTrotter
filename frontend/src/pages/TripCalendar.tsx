@@ -347,65 +347,63 @@ export default function TripCalendar() {
       </div>
 
       {/* Quick Edit Activity Modal */}
-      <Dialog open={!!editingActivity} onOpenChange={(o) => !o && setEditingActivity(null)}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>Edit Activity Schedule</DialogTitle>
-            <DialogDescription>{editingActivity?.activity.name}</DialogDescription>
-          </DialogHeader>
-          <form onSubmit={handleSaveEditSubmit} className="space-y-4 py-2">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <Label htmlFor="act-start">Start Time</Label>
-                <Input
-                  id="act-start"
-                  type="time"
-                  value={editStartTime}
-                  onChange={(e) => setEditStartTime(e.target.value)}
-                />
-              </div>
-              <div>
-                <Label htmlFor="act-end">End Time</Label>
-                <Input
-                  id="act-end"
-                  type="time"
-                  value={editEndTime}
-                  onChange={(e) => setEditEndTime(e.target.value)}
-                />
-              </div>
-            </div>
-
+      <Dialog open={!!editingActivity} onClose={() => setEditingActivity(null)} className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Edit Activity Schedule</DialogTitle>
+          <DialogDescription>{editingActivity?.activity.name}</DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSaveEditSubmit} className="space-y-4 px-6 py-2">
+          <div className="grid grid-cols-2 gap-3">
             <div>
-              <Label htmlFor="act-cost">Cost (INR ₹)</Label>
+              <Label htmlFor="act-start">Start Time</Label>
               <Input
-                id="act-cost"
-                type="number"
-                min="0"
-                value={editCost}
-                onChange={(e) => setEditCost(e.target.value)}
+                id="act-start"
+                type="time"
+                value={editStartTime}
+                onChange={(e) => setEditStartTime(e.target.value)}
               />
             </div>
-
             <div>
-              <Label htmlFor="act-notes">Notes / Booking Details</Label>
+              <Label htmlFor="act-end">End Time</Label>
               <Input
-                id="act-notes"
-                placeholder="e.g. Booking Ref #1234, Entry gate 4"
-                value={editNotes}
-                onChange={(e) => setEditNotes(e.target.value)}
+                id="act-end"
+                type="time"
+                value={editEndTime}
+                onChange={(e) => setEditEndTime(e.target.value)}
               />
             </div>
+          </div>
 
-            <DialogFooter className="pt-2">
-              <Button type="button" variant="outline" onClick={() => setEditingActivity(null)}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={savingEdit}>
-                {savingEdit ? 'Saving…' : 'Save Changes'}
-              </Button>
-            </DialogFooter>
-          </form>
-        </DialogContent>
+          <div>
+            <Label htmlFor="act-cost">Cost (INR ₹)</Label>
+            <Input
+              id="act-cost"
+              type="number"
+              min="0"
+              value={editCost}
+              onChange={(e) => setEditCost(e.target.value)}
+            />
+          </div>
+
+          <div>
+            <Label htmlFor="act-notes">Notes / Booking Details</Label>
+            <Input
+              id="act-notes"
+              placeholder="e.g. Booking Ref #1234, Entry gate 4"
+              value={editNotes}
+              onChange={(e) => setEditNotes(e.target.value)}
+            />
+          </div>
+
+          <DialogFooter className="pt-2">
+            <Button type="button" variant="outline" onClick={() => setEditingActivity(null)} disabled={savingEdit}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={savingEdit}>
+              {savingEdit ? 'Saving…' : 'Save Changes'}
+            </Button>
+          </DialogFooter>
+        </form>
       </Dialog>
 
       {/* Delete Activity Confirm */}
