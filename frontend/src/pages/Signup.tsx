@@ -314,7 +314,7 @@ export default function Signup() {
         sessionStorage.removeItem('globetrotter_pending_verification_email');
         toast({
           title: 'Welcome to GlobeTrotter!',
-          description: 'Your passport is ready.',
+          description: 'Your account is ready.',
           variant: 'success',
         });
         navigate('/dashboard');
@@ -393,7 +393,7 @@ export default function Signup() {
             </div>
             <span className="font-serif text-2xl font-semibold text-parchment-50 tracking-tight">GlobeTrotter</span>
           </div>
-          <h1 className="font-serif text-2xl sm:text-3xl font-semibold text-parchment-50">Create your traveler passport</h1>
+          <h1 className="font-serif text-2xl sm:text-3xl font-semibold text-parchment-50">Create your GlobeTrotter account</h1>
           <p className="font-sans text-xs sm:text-sm text-parchment-100/60 mt-1">
             Personalize your profile and start crafting multi-city adventures
           </p>
@@ -417,7 +417,7 @@ export default function Signup() {
                 <div className="space-y-2">
                   <h2 className="font-serif text-2xl font-semibold text-midnight">Check your inbox ✈️</h2>
                   <p className="font-sans text-xs text-ink/70 max-w-md mx-auto leading-relaxed">
-                    Your traveler passport is almost ready! We've sent a verification link to:
+                    Your GlobeTrotter account is almost ready! We've sent a verification link to:
                   </p>
                   <p className="font-mono text-xs font-semibold text-teal bg-teal/10 py-1.5 px-3 rounded-md inline-block max-w-full truncate">
                     {registeredEmail}
@@ -502,7 +502,7 @@ export default function Signup() {
                       <span className="text-[11px] text-ink/50">(Optional)</span>
                     </div>
                     <p className="text-xs text-ink/60 mt-0.5 mb-2">
-                      Upload your picture for your personalized travel passport (PNG, JPG up to 10MB)
+                      Upload your picture for your travel profile (PNG, JPG up to 10MB)
                     </p>
                     <div className="flex items-center justify-center sm:justify-start gap-2">
                       <Button
@@ -807,7 +807,7 @@ export default function Signup() {
                   {loading ? (
                     <span className="inline-flex items-center gap-2">
                       <Loader2 className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Creating your passport...
+                      Creating your account...
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-2">

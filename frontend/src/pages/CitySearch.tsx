@@ -81,7 +81,7 @@ export default function CitySearch() {
 
   const handleToggleBookmark = async (city: City) => {
     if (!user) {
-      toast({ title: 'Sign in required', description: 'Sign in to save destinations to your passport.', variant: 'default' });
+      toast({ title: 'Sign in required', description: 'Sign in to save destinations to your account.', variant: 'default' });
       navigate('/login');
       return;
     }

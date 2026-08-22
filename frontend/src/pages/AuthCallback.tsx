@@ -273,7 +273,7 @@ export default function AuthCallback() {
               <div className="w-14 h-14 rounded-full bg-teal/15 flex items-center justify-center mx-auto text-teal">
                 <Loader2 className="w-7 h-7 animate-spin" />
               </div>
-              <h1 className="font-serif text-xl font-semibold text-midnight">Verifying your passport...</h1>
+              <h1 className="font-serif text-xl font-semibold text-midnight">Verifying your account...</h1>
               <p className="font-sans text-xs text-ink/60 max-w-xs mx-auto">
                 Please wait while we confirm your email and set up your GlobeTrotter account.
               </p>
@@ -287,7 +287,7 @@ export default function AuthCallback() {
               </div>
               <div className="space-y-1.5">
                 <h1 className="font-serif text-2xl font-semibold text-midnight">Email verified! ✈️</h1>
-                <p className="font-sans text-sm text-ink/70">Your traveler passport is ready.</p>
+                <p className="font-sans text-sm text-ink/70">Your travel planning account is ready.</p>
                 <p className="font-sans text-xs text-ink/50 pt-1">Redirecting to your dashboard in a moment...</p>
               </div>
 

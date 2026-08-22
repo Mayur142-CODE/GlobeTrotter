@@ -161,7 +161,7 @@ export default function Profile() {
 
       await refreshProfile();
       setSaved(true);
-      toast({ title: 'Profile saved', description: 'Your passport details have been updated.', variant: 'success' });
+      toast({ title: 'Profile saved', description: 'Your profile details have been updated.', variant: 'success' });
       setTimeout(() => setSaved(false), 3000);
     } catch (err: any) {
       toast({ title: 'Save failed', description: err?.message || 'Could not update profile.', variant: 'error' });
@@ -229,7 +229,7 @@ export default function Profile() {
 
   return (
     <PageContainer>
-      <PageHeader title="Profile & Passport" subtitle="Manage your traveler identity and preferences" />
+      <PageHeader title="Profile & Account" subtitle="Manage your traveler profile and preferences" />
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {/* Avatar Card */}
@@ -303,14 +303,14 @@ export default function Profile() {
           </div>
         </motion.div>
 
-        {/* Edit Passport Form */}
+        {/* Edit Profile Form */}
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: 0.06 }}
           className="boarding-pass p-6 lg:col-span-2"
         >
-          <h2 className="font-serif text-lg font-semibold text-midnight mb-4">Passport Details & Preferences</h2>
+          <h2 className="font-serif text-lg font-semibold text-midnight mb-4">Profile Details & Preferences</h2>
           <div className="space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>

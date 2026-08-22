@@ -151,7 +151,7 @@ export default function VerifyEmail() {
               </div>
             )}
             <p className="font-sans text-xs text-ink/60 pt-1">
-              Verify your email address to activate your passport and access GlobeTrotter.
+              Verify your email address to activate your account and start planning your journeys.
             </p>
           </div>
 

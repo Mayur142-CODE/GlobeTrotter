@@ -245,7 +245,7 @@ export default function Login() {
             <p className="font-sans text-xs text-ink/60">
               New to GlobeTrotter?{' '}
               <Link to="/signup" className="font-semibold text-teal hover:underline focus-ring rounded">
-                Create passport
+                Create your account
               </Link>
             </p>
           </div>
