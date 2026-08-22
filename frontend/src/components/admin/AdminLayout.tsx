@@ -37,7 +37,7 @@ export function AdminLayout() {
       description: 'You have been logged out of the admin console.',
       variant: 'default',
     });
-    navigate('/admin/login', { replace: true });
+    navigate('/login', { replace: true });
   };
 
   return (

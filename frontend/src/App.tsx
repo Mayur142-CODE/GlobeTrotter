@@ -31,7 +31,6 @@ const SharedItinerary = lazy(() => import('@/pages/SharedItinerary'));
 const Profile = lazy(() => import('@/pages/Profile'));
 
 // Admin Pages
-const AdminLogin = lazy(() => import('@/pages/AdminLogin'));
 const AdminDashboard = lazy(() => import('@/pages/AdminDashboard'));
 const ManageUsers = lazy(() => import('@/pages/admin/ManageUsers'));
 const PopularCities = lazy(() => import('@/pages/admin/PopularCities'));
@@ -96,7 +95,6 @@ export default function App() {
                 <Route path="/verify-email" element={<VerifyEmail />} />
                 <Route path="/auth/callback" element={<AuthCallback />} />
                 <Route path="/shared/:tripId" element={<SharedItinerary />} />
-                <Route path="/admin/login" element={<AdminLogin />} />
               </Route>
 
               {/* Protected Traveler Application Routes */}

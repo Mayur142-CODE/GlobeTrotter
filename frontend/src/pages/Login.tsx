@@ -7,12 +7,14 @@ import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
 import { useAuth } from '@/contexts/AuthContext';
+import { useAdminAuth } from '@/contexts/AdminAuthContext';
 
 export default function Login() {
   const navigate = useNavigate();
   const location = useLocation();
   const toast = useToast();
   const { signIn } = useAuth();
+  const { adminLogin } = useAdminAuth();
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -45,6 +47,40 @@ export default function Login() {
     setLoading(true);
     setErrors({});
 
+    const cleanEmail = email.trim().toLowerCase();
+    const cleanPassword = password.trim();
+
+    // 1. Check if attempting Demo Admin Login
+    if (cleanEmail === 'admin@globaltrotter.com') {
+      try {
+        const isAdmin = await adminLogin(cleanEmail, cleanPassword);
+        if (isAdmin) {
+          toast({
+            title: 'Admin Access Granted',
+            description: 'Welcome to GlobeTrotter Admin Console.',
+            variant: 'success',
+          });
+          const adminTarget = from.startsWith('/admin') ? from : '/admin';
+          navigate(adminTarget, { replace: true });
+          return;
+        } else {
+          setErrors({ general: 'Invalid admin credentials.' });
+          toast({
+            title: 'Sign in failed',
+            description: 'Invalid admin credentials.',
+            variant: 'error',
+          });
+          return;
+        }
+      } catch (err: any) {
+        setErrors({ general: 'Admin login error.' });
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
+    // 2. Normal Traveler Login with Supabase
     try {
       const { isVerified } = await signIn(email, password);
 
@@ -52,7 +88,7 @@ export default function Login() {
         sessionStorage.setItem('globetrotter_pending_verification_email', email.trim());
         toast({
           title: 'Email verification required',
-          description: "Please confirm your email address before accessing GlobeTrotter.",
+          description: 'Please confirm your email address before accessing GlobeTrotter.',
           variant: 'default',
         });
         navigate('/verify-email', { state: { email: email.trim() } });
@@ -66,7 +102,8 @@ export default function Login() {
         variant: 'success',
       });
 
-      navigate(from, { replace: true });
+      const normalTarget = from.startsWith('/admin') ? '/dashboard' : from;
+      navigate(normalTarget, { replace: true });
     } catch (err: any) {
       const errorMessage = err?.message || 'Email or password is incorrect.';
       if (errorMessage.toLowerCase().includes('not confirmed') || errorMessage.toLowerCase().includes('verify')) {
@@ -157,73 +194,58 @@ export default function Login() {
                 />
                 <button
                   type="button"
-                  onClick={() => setShowPassword((prev) => !prev)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-ink/40 hover:text-ink focus:outline-none focus-visible:ring-2 focus-visible:ring-teal rounded p-1 transition-colors"
+                  onClick={() => setShowPassword(!showPassword)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-ink/40 hover:text-ink focus-ring rounded"
                   aria-label={showPassword ? 'Hide password' : 'Show password'}
                 >
-                  {showPassword ? (
-                    <EyeOff className="w-4 h-4" aria-hidden />
-                  ) : (
-                    <Eye className="w-4 h-4" aria-hidden />
-                  )}
+                  {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
                 </button>
               </div>
               {errors.password && <p id="password-error" className="font-sans text-xs text-coral mt-1.5">{errors.password}</p>}
             </div>
 
-            {/* Remember Me & Forgot Password Row */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-1">
-              <label className="inline-flex items-center gap-2 cursor-pointer select-none group">
-                <button
-                  type="button"
-                  role="checkbox"
-                  aria-checked={rememberMe}
-                  onClick={() => setRememberMe((prev) => !prev)}
-                  className={`w-4 h-4 rounded border flex items-center justify-center transition-all ${
-                    rememberMe
-                      ? 'bg-teal border-teal text-white'
-                      : 'border-midnight/30 bg-parchment-50 group-hover:border-teal'
-                  }`}
-                  aria-label="Remember me on this device"
-                >
-                  {rememberMe && <Check className="w-3 h-3 stroke-[3]" />}
-                </button>
-                <span className="font-sans text-xs text-ink/70 group-hover:text-ink transition-colors">
-                  Remember me
-                </span>
+            <div className="flex items-center justify-between text-xs">
+              <label className="flex items-center gap-2 cursor-pointer select-none">
+                <input
+                  type="checkbox"
+                  checked={rememberMe}
+                  onChange={(e) => setRememberMe(e.target.checked)}
+                  className="w-4 h-4 rounded border-parchment-300 text-teal focus:ring-teal"
+                />
+                <span className="font-sans text-ink/70">Remember me</span>
               </label>
 
               <Link
                 to="/forgot-password"
-                className="font-sans text-xs text-teal/80 hover:text-teal font-medium hover:underline transition-colors text-right"
+                className="font-sans text-teal hover:underline focus-ring rounded"
               >
                 Forgot password?
               </Link>
             </div>
 
-            <Button type="submit" size="lg" className="w-full mt-2" disabled={loading}>
+            <Button
+              type="submit"
+              disabled={loading}
+              className="w-full mt-2"
+            >
               {loading ? (
-                <span className="inline-flex items-center gap-2">
+                <span className="flex items-center justify-center gap-2">
                   <Loader2 className="w-4 h-4 animate-spin" />
-                  Checking your passport...
+                  Signing in…
                 </span>
               ) : (
-                <span className="inline-flex items-center gap-2">
-                  <span>Continue Journey</span>
-                  <ArrowRight className="w-4 h-4" />
+                <span className="flex items-center justify-center gap-2">
+                  Sign In <ArrowRight className="w-4 h-4" />
                 </span>
               )}
             </Button>
           </form>
 
-          <div className="mt-6 pt-5 border-t border-dashed border-parchment-300 text-center">
-            <p className="font-sans text-sm text-ink/60">
-              Don't have an account?{' '}
-              <Link
-                to="/register"
-                className="font-semibold text-teal hover:text-teal-dark hover:underline transition-all"
-              >
-                Create your account
+          <div className="mt-6 pt-4 border-t border-dashed border-parchment-300 text-center">
+            <p className="font-sans text-xs text-ink/60">
+              New to GlobeTrotter?{' '}
+              <Link to="/signup" className="font-semibold text-teal hover:underline focus-ring rounded">
+                Create passport
               </Link>
             </p>
           </div>

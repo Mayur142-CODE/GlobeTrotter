@@ -82,7 +82,7 @@ export default function ManageUsers() {
             <Users className="w-7 h-7 text-teal" /> Manage Users
           </h1>
           <p className="font-sans text-xs sm:text-sm text-ink/60 mt-1">
-            Registered travelers and their travel itineraries ({users.length} travelers registered)
+            Registered travelers and their travel itineraries ({users.length} {users.length === 1 ? 'traveler' : 'travelers'} in database)
           </p>
         </div>
       </div>
@@ -94,7 +94,7 @@ export default function ManageUsers() {
           <Input
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name, location, phone…"
+            placeholder="Search by name, email, location…"
             className="pl-9 text-sm"
           />
         </div>
@@ -115,7 +115,7 @@ export default function ManageUsers() {
         </div>
       </div>
 
-      {/* Users Table / Grid */}
+      {/* Users Table */}
       {loading ? (
         <div className="space-y-3">
           {Array.from({ length: 4 }).map((_, i) => (
@@ -127,7 +127,7 @@ export default function ManageUsers() {
           <Users className="w-12 h-12 text-ink/30 mx-auto mb-3" />
           <h3 className="font-serif text-base font-semibold text-midnight">No Travelers Found</h3>
           <p className="font-sans text-xs text-ink/50 mt-1">
-            {search ? 'No users matching your search query.' : 'No travelers registered yet in Supabase.'}
+            {search ? 'No users matching your search query.' : 'No travelers registered yet in database.'}
           </p>
         </div>
       ) : (
@@ -136,10 +136,11 @@ export default function ManageUsers() {
             <table className="w-full text-left text-sm">
               <thead className="bg-midnight text-parchment-50 text-xs ticket-mono uppercase border-b border-parchment-300">
                 <tr>
-                  <th className="py-3.5 px-4 font-medium">Traveler</th>
-                  <th className="py-3.5 px-4 font-medium hidden sm:table-cell">Contact & Location</th>
+                  <th className="py-3.5 px-4 font-medium">User</th>
+                  <th className="py-3.5 px-4 font-medium">Email</th>
+                  <th className="py-3.5 px-4 font-medium hidden sm:table-cell">Location</th>
                   <th className="py-3.5 px-4 font-medium hidden md:table-cell">Joined Date</th>
-                  <th className="py-3.5 px-4 font-medium text-center">Trips Created</th>
+                  <th className="py-3.5 px-4 font-medium text-center">Trips</th>
                   <th className="py-3.5 px-4 font-medium text-right">Actions</th>
                 </tr>
               </thead>
@@ -151,23 +152,25 @@ export default function ManageUsers() {
                         <UserAvatar avatarUrl={u.avatarUrl} name={u.name} size="sm" />
                         <div>
                           <p className="font-serif font-semibold text-midnight leading-tight">{u.name}</p>
-                          <p className="ticket-mono text-[11px] text-ink/50 mt-0.5">ID: {u.id.slice(0, 8)}…</p>
+                          <p className="ticket-mono text-[10px] text-ink/40 mt-0.5">ID: {u.id.slice(0, 8)}…</p>
                         </div>
                       </div>
                     </td>
+                    <td className="py-3.5 px-4">
+                      <span className="font-sans text-xs text-ink/70 flex items-center gap-1.5">
+                        <Mail className="w-3.5 h-3.5 text-teal shrink-0" />
+                        {u.email}
+                      </span>
+                    </td>
                     <td className="py-3.5 px-4 hidden sm:table-cell">
                       <div className="text-xs space-y-0.5">
-                        {(u.city || u.country) && (
+                        {(u.city || u.country) ? (
                           <p className="flex items-center gap-1 text-ink/70">
-                            <MapPin className="w-3 h-3 text-teal" />
+                            <MapPin className="w-3 h-3 text-teal shrink-0" />
                             {[u.city, u.country].filter(Boolean).join(', ')}
                           </p>
-                        )}
-                        {u.phone && (
-                          <p className="flex items-center gap-1 text-ink/50 ticket-mono text-[11px]">
-                            <Phone className="w-3 h-3 text-ink/40" />
-                            {u.phone}
-                          </p>
+                        ) : (
+                          <span className="text-ink/40 italic text-xs">Global Traveler</span>
                         )}
                       </div>
                     </td>
@@ -190,7 +193,7 @@ export default function ManageUsers() {
                         onClick={() => handleInspectUser(u)}
                         className="text-xs"
                       >
-                        <Eye className="w-3.5 h-3.5 mr-1" /> View Details
+                        <Eye className="w-3.5 h-3.5 mr-1" /> View Trips
                       </Button>
                     </td>
                   </tr>
@@ -221,12 +224,8 @@ export default function ManageUsers() {
                   <UserAvatar avatarUrl={selectedUser.avatarUrl} name={selectedUser.name} size="md" />
                   <div>
                     <h2 className="font-serif text-xl font-bold text-midnight">{selectedUser.name}</h2>
-                    <p className="ticket-mono text-xs text-ink/50">
-                      Member since{' '}
-                      {new Date(selectedUser.joinedAt).toLocaleDateString('en-US', {
-                        month: 'long',
-                        year: 'numeric',
-                      })}
+                    <p className="ticket-mono text-xs text-ink/50 flex items-center gap-1.5 mt-0.5">
+                      <Mail className="w-3 h-3 text-teal" /> {selectedUser.email}
                     </p>
                   </div>
                 </div>
@@ -243,13 +242,17 @@ export default function ManageUsers() {
                 <div>
                   <span className="ticket-mono text-[10px] text-ink/40 uppercase block">Location</span>
                   <span className="font-medium text-midnight">
-                    {[selectedUser.city, selectedUser.country].filter(Boolean).join(', ') || 'Not specified'}
+                    {[selectedUser.city, selectedUser.country].filter(Boolean).join(', ') || 'Global Traveler'}
                   </span>
                 </div>
                 <div>
-                  <span className="ticket-mono text-[10px] text-ink/40 uppercase block">Phone</span>
+                  <span className="ticket-mono text-[10px] text-ink/40 uppercase block">Member Since</span>
                   <span className="font-medium text-midnight ticket-mono">
-                    {selectedUser.phone || 'None'}
+                    {new Date(selectedUser.joinedAt).toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}
                   </span>
                 </div>
                 <div>
@@ -316,7 +319,8 @@ export default function ManageUsers() {
                                   className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-parchment-200/70 text-[11px] font-sans text-midnight"
                                 >
                                   <span className="font-bold text-teal">{idx + 1}.</span> {s.cityName}
-                                  <span className="text-[10px] text-ink/40">({s.activityCount} acts)</span>
+                                  {s.country && <span className="text-ink/40">({s.country})</span>}
+                                  <span className="text-[10px] text-teal font-semibold">· {s.activityCount} acts</span>
                                 </span>
                               ))}
                             </div>
