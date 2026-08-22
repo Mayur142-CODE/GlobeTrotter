@@ -35,7 +35,7 @@ export default function Signup() {
   const { signUp, resendVerificationEmail } = useAuth();
 
   // Form Fields
-  const [photoFile, setPhotoFile] = useState<File | null>(null);
+  const [photoFile, setPhotoFile] = useState<File | Blob | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string>('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -64,7 +64,7 @@ export default function Signup() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [loading, setLoading] = useState(false);
-  
+
   // Verification State (post signup)
   const [verificationPending, setVerificationPending] = useState(false);
   const [registeredEmail, setRegisteredEmail] = useState('');
@@ -197,19 +197,60 @@ export default function Signup() {
 
   const passwordStrength = getPasswordStrength(password);
 
+  // Resize and compress photo locally before preview/upload
   function handlePhotoChange(e: ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (file) {
-      if (file.size > 5 * 1024 * 1024) {
-        toast({ title: 'Image too large', description: 'Please select an image under 5MB.', variant: 'error' });
+      if (file.size > 10 * 1024 * 1024) {
+        toast({ title: 'Image too large', description: 'Please select an image under 10MB.', variant: 'error' });
         return;
       }
-      setPhotoFile(file);
-      const reader = new FileReader();
-      reader.onloadend = () => {
-        setPhotoPreview(reader.result as string);
+
+      const img = new Image();
+      const objectUrl = URL.createObjectURL(file);
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        const maxDim = 300;
+        let width = img.width;
+        let height = img.height;
+
+        if (width > height) {
+          if (width > maxDim) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          }
+        } else {
+          if (height > maxDim) {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          canvas.toBlob(
+            (blob) => {
+              if (blob) {
+                setPhotoFile(blob);
+                const compressedUrl = URL.createObjectURL(blob);
+                setPhotoPreview(compressedUrl);
+              } else {
+                setPhotoFile(file);
+                setPhotoPreview(objectUrl);
+              }
+            },
+            'image/jpeg',
+            0.8
+          );
+        } else {
+          setPhotoFile(file);
+          setPhotoPreview(objectUrl);
+        }
       };
-      reader.readAsDataURL(file);
+      img.src = objectUrl;
     }
   }
 
@@ -217,8 +258,8 @@ export default function Signup() {
     const e: typeof errors = {};
     if (!firstName.trim()) e.firstName = 'First name is required';
     if (!lastName.trim()) e.lastName = 'Last name is required';
-    
-    // Strict email validation checking user@domain.tld
+
+    // Strict email validation
     if (!email.trim()) {
       e.email = 'Email address is required';
     } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) {
@@ -252,7 +293,7 @@ export default function Signup() {
     setErrors({});
 
     try {
-      const { user: createdUser, isVerified } = await signUp({
+      const { isVerified } = await signUp({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         email: email.trim(),
@@ -263,14 +304,12 @@ export default function Signup() {
         city: selectedCity?.name,
         additionalInfo: additionalInfo.trim(),
         avatarFile: photoFile,
-        avatarUrl: photoPreview || undefined,
         password,
       });
 
       setRegisteredEmail(email.trim());
 
       if (isVerified) {
-        // If email verification is disabled in Supabase, proceed to dashboard
         toast({
           title: 'Welcome to GlobeTrotter!',
           description: 'Your passport is ready.',
@@ -278,7 +317,6 @@ export default function Signup() {
         });
         navigate('/dashboard');
       } else {
-        // Show check inbox / email verification state
         setVerificationPending(true);
         toast({
           title: 'Verification email sent ✈️',
@@ -462,7 +500,7 @@ export default function Signup() {
                       <span className="text-[11px] text-ink/50">(Optional)</span>
                     </div>
                     <p className="text-xs text-ink/60 mt-0.5 mb-2">
-                      Upload your picture for your personalized travel passport (PNG, JPG up to 5MB)
+                      Upload your picture for your personalized travel passport (PNG, JPG up to 10MB)
                     </p>
                     <div className="flex items-center justify-center sm:justify-start gap-2">
                       <Button

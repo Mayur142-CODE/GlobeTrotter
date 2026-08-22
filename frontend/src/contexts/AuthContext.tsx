@@ -41,8 +41,11 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 // Helper to convert technical Supabase errors to friendly messages
 export function getFriendlyAuthErrorMessage(error: AuthError | Error | null): string {
   if (!error) return 'An unexpected error occurred. Please try again.';
-  const message = error.message.toLowerCase();
+  const message = error.message?.toLowerCase() || '';
 
+  if (message.includes('413') || message.includes('too large') || message.includes('bytes')) {
+    return 'The image or form data is too large. Please select a smaller photo.';
+  }
   if (message.includes('invalid login credentials') || message.includes('invalid credentials')) {
     return 'Email or password is incorrect.';
   }
@@ -95,7 +98,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const firstName = data?.first_name || meta.first_name || '';
       const lastName = data?.last_name || meta.last_name || '';
       const fullName = `${firstName} ${lastName}`.trim() || meta.name || sbUser.email?.split('@')[0] || 'Traveler';
-      const avatarUrl = data?.avatar_url || meta.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400';
+      const avatarUrl = data?.avatar_url || (meta.avatar_url && !meta.avatar_url.startsWith('data:') ? meta.avatar_url : '') || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400';
 
       const currentProfile: UserProfile = {
         id: sbUser.id,
@@ -197,15 +200,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Upload avatar to Supabase Storage
   const uploadAvatar = async (userId: string, file: File | Blob): Promise<string | null> => {
     try {
-      const fileExt = file instanceof File ? file.name.split('.').pop() : 'jpg';
+      const fileExt = file instanceof File ? file.name.split('.').pop() || 'jpg' : 'jpg';
       const filePath = `avatars/${userId}-${Date.now()}.${fileExt}`;
 
       const { error: uploadError } = await supabase.storage
         .from('avatars')
-        .upload(filePath, file, { upsert: true });
+        .upload(filePath, file, { upsert: true, contentType: file.type || 'image/jpeg' });
 
       if (uploadError) {
-        console.warn('[GlobeTrotter] Avatar upload warning (falling back):', uploadError.message);
+        console.warn('[GlobeTrotter] Avatar storage notice:', uploadError.message);
         return null;
       }
 
@@ -213,7 +216,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         .from('avatars')
         .getPublicUrl(filePath);
 
-      return publicUrlData.publicUrl;
+      return publicUrlData?.publicUrl || null;
     } catch (err) {
       console.warn('[GlobeTrotter] Avatar upload exception:', err);
       return null;
@@ -252,9 +255,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signUp = async (payload: SignupPayload) => {
     setLoading(true);
     try {
-      let finalAvatarUrl = payload.avatarUrl || '';
+      // CRITICAL: Never include base64 data URIs in Supabase Auth user_metadata payload
+      // because Supabase Auth enforces a 1MB request body limit (Status 413).
+      const safeAvatarUrl =
+        payload.avatarUrl && !payload.avatarUrl.startsWith('data:')
+          ? payload.avatarUrl
+          : '';
 
-      // Create auth user first
       const redirectUrl = `${window.location.origin}/auth/callback`;
       const { data, error } = await supabase.auth.signUp({
         email: payload.email.trim(),
@@ -270,7 +277,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             country: payload.country?.trim() || '',
             country_id: payload.countryId || '',
             additional_info: payload.additionalInfo?.trim() || '',
-            avatar_url: finalAvatarUrl,
+            avatar_url: safeAvatarUrl,
           },
         },
       });
@@ -281,12 +288,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       const createdUser = data.user;
       const isVerified = !!(createdUser?.email_confirmed_at || createdUser?.confirmed_at);
+      let uploadedAvatarUrl = safeAvatarUrl;
 
-      // If user uploaded a photo file and user ID is available, upload to storage
+      // If user uploaded a photo file and user ID is available, upload separately to storage
       if (createdUser && payload.avatarFile) {
         const uploadedUrl = await uploadAvatar(createdUser.id, payload.avatarFile);
         if (uploadedUrl) {
-          finalAvatarUrl = uploadedUrl;
+          uploadedAvatarUrl = uploadedUrl;
         }
       }
 
@@ -301,14 +309,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             city: payload.city?.trim() || null,
             country: payload.country?.trim() || null,
             additional_info: payload.additionalInfo?.trim() || null,
-            avatar_url: finalAvatarUrl || null,
+            avatar_url: uploadedAvatarUrl || null,
             updated_at: new Date().toISOString(),
           },
           { onConflict: 'id' }
         );
 
         if (profileError) {
-          console.warn('[GlobeTrotter] Profile insertion note:', profileError.message);
+          console.warn('[GlobeTrotter] Profile insertion notice:', profileError.message);
         }
 
         await loadProfile(createdUser);

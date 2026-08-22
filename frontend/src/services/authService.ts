@@ -49,7 +49,7 @@ export async function login(email: string, password: string): Promise<User> {
     firstName,
     lastName,
     email: data.user.email || '',
-    avatarUrl: profile?.avatar_url || meta.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+    avatarUrl: profile?.avatar_url || (meta.avatar_url && !meta.avatar_url.startsWith('data:') ? meta.avatar_url : '') || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
     phone: profile?.phone || meta.phone || '',
     city: profile?.city || meta.city || '',
     cityId: profile?.city_id || meta.city_id || '',
@@ -78,6 +78,9 @@ export async function signup(
           password: passwordParam || '',
         };
 
+  const safeAvatarUrl =
+    data.avatarUrl && !data.avatarUrl.startsWith('data:') ? data.avatarUrl : '';
+
   const redirectUrl = `${window.location.origin}/auth/callback`;
   const { data: authData, error } = await supabase.auth.signUp({
     email: data.email.trim(),
@@ -93,7 +96,7 @@ export async function signup(
         country: data.country || '',
         country_id: data.countryId || '',
         additional_info: data.additionalInfo || '',
-        avatar_url: data.avatarUrl || '',
+        avatar_url: safeAvatarUrl,
       },
     },
   });
@@ -117,7 +120,7 @@ export async function signup(
       city: data.city?.trim() || null,
       country: data.country?.trim() || null,
       additional_info: data.additionalInfo?.trim() || null,
-      avatar_url: data.avatarUrl || null,
+      avatar_url: safeAvatarUrl || null,
       updated_at: new Date().toISOString(),
     },
     { onConflict: 'id' }
@@ -129,7 +132,7 @@ export async function signup(
     firstName: data.firstName,
     lastName: data.lastName,
     email: data.email,
-    avatarUrl: data.avatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+    avatarUrl: safeAvatarUrl || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
     phone: data.phone,
     city: data.city,
     cityId: data.cityId,
@@ -184,7 +187,7 @@ export async function getCurrentUser(): Promise<User | null> {
     firstName,
     lastName,
     email: sbUser.email || '',
-    avatarUrl: profile?.avatar_url || meta.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
+    avatarUrl: profile?.avatar_url || (meta.avatar_url && !meta.avatar_url.startsWith('data:') ? meta.avatar_url : '') || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400',
     phone: profile?.phone || meta.phone || '',
     city: profile?.city || meta.city || '',
     cityId: profile?.city_id || meta.city_id || '',
