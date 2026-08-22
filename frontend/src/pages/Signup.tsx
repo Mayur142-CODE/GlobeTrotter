@@ -14,14 +14,16 @@ import {
   Eye,
   EyeOff,
   Check,
-  CheckCircle2,
+  RefreshCw,
+  ArrowLeft,
+  Loader2,
 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { signup } from '@/services/authService';
+import { useAuth } from '@/contexts/AuthContext';
 import { getCountries, searchCities } from '@/services/locationService';
 import { LocationCombobox, type ComboboxOption } from '@/components/shared/LocationCombobox';
 import type { Country, CityLocation } from '@/types/location';
@@ -30,8 +32,10 @@ export default function Signup() {
   const navigate = useNavigate();
   const toast = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const { signUp, resendVerificationEmail } = useAuth();
 
   // Form Fields
+  const [photoFile, setPhotoFile] = useState<File | null>(null);
   const [photoPreview, setPhotoPreview] = useState<string>('');
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -39,13 +43,13 @@ export default function Signup() {
   const [phone, setPhone] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  
+
   // Location States
   const [selectedCountry, setSelectedCountry] = useState<Country | null>(null);
   const [selectedCity, setSelectedCity] = useState<CityLocation | null>(null);
   const [countriesList, setCountriesList] = useState<Country[]>([]);
   const [citiesList, setCitiesList] = useState<CityLocation[]>([]);
-  
+
   // Location Loading & Error states
   const [loadingCountries, setLoadingCountries] = useState(false);
   const [countriesError, setCountriesError] = useState<string | null>(null);
@@ -60,7 +64,12 @@ export default function Signup() {
   const [showConfirmPassword, setShowConfirmPassword] = useState(false);
   const [errors, setErrors] = useState<{ [key: string]: string }>({});
   const [loading, setLoading] = useState(false);
-  const [isSuccess, setIsSuccess] = useState(false);
+  
+  // Verification State (post signup)
+  const [verificationPending, setVerificationPending] = useState(false);
+  const [registeredEmail, setRegisteredEmail] = useState('');
+  const [resending, setResending] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
 
   // Load countries on mount
   const fetchCountries = async () => {
@@ -79,6 +88,15 @@ export default function Signup() {
   useEffect(() => {
     fetchCountries();
   }, []);
+
+  // Cooldown countdown
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const timer = setInterval(() => {
+      setCooldown((prev) => prev - 1);
+    }, 1000);
+    return () => clearInterval(timer);
+  }, [cooldown]);
 
   // Fetch initial cities whenever country changes
   useEffect(() => {
@@ -134,7 +152,6 @@ export default function Signup() {
   const handleCountrySelect = (option: ComboboxOption) => {
     const matched = countriesList.find((c) => c.id === option.id) || null;
     setSelectedCountry(matched);
-    // Reset previously selected city when country changes
     setSelectedCity(null);
     if (errors.country) {
       setErrors((prev) => ({ ...prev, country: '' }));
@@ -158,7 +175,7 @@ export default function Signup() {
 
   // Password strength calculator
   function getPasswordStrength(pass: string) {
-    if (!pass) return { score: 0, label: '', color: '' };
+    if (!pass) return { score: 0, label: '', color: '', text: '' };
     let score = 0;
     if (pass.length >= 6) score += 1;
     if (pass.length >= 10) score += 1;
@@ -187,6 +204,7 @@ export default function Signup() {
         toast({ title: 'Image too large', description: 'Please select an image under 5MB.', variant: 'error' });
         return;
       }
+      setPhotoFile(file);
       const reader = new FileReader();
       reader.onloadend = () => {
         setPhotoPreview(reader.result as string);
@@ -199,24 +217,30 @@ export default function Signup() {
     const e: typeof errors = {};
     if (!firstName.trim()) e.firstName = 'First name is required';
     if (!lastName.trim()) e.lastName = 'Last name is required';
+    
+    // Strict email validation checking user@domain.tld
     if (!email.trim()) {
       e.email = 'Email address is required';
-    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      e.email = 'Enter a valid email address';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(email.trim())) {
+      e.email = 'Please enter a valid email address.';
     }
+
     if (!password) {
       e.password = 'Password is required';
     } else if (password.length < 6) {
       e.password = 'Password must be at least 6 characters';
     }
+
     if (!confirmPassword) {
       e.confirmPassword = 'Confirm your password';
     } else if (password !== confirmPassword) {
       e.confirmPassword = "Passwords don't match.";
     }
+
     if (!agreeTerms) {
       e.terms = 'Please accept the Terms of Service & Privacy Policy to continue.';
     }
+
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -225,38 +249,77 @@ export default function Signup() {
     e.preventDefault();
     if (!validate()) return;
     setLoading(true);
+    setErrors({});
+
     try {
-      await signup({
-        name: `${firstName.trim()} ${lastName.trim()}`,
+      const { user: createdUser, isVerified } = await signUp({
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         email: email.trim(),
         phone: phone.trim(),
-        countryId: selectedCountry?.id || undefined,
-        country: selectedCountry?.name || undefined,
-        cityId: selectedCity?.id || undefined,
-        city: selectedCity?.name || undefined,
+        countryId: selectedCountry?.id,
+        country: selectedCountry?.name,
+        cityId: selectedCity?.id,
+        city: selectedCity?.name,
         additionalInfo: additionalInfo.trim(),
+        avatarFile: photoFile,
         avatarUrl: photoPreview || undefined,
         password,
       });
 
-      setIsSuccess(true);
-      toast({
-        title: 'Welcome to GlobeTrotter!',
-        description: 'Your adventure begins now.',
-        variant: 'success',
-      });
+      setRegisteredEmail(email.trim());
 
-      setTimeout(() => {
+      if (isVerified) {
+        // If email verification is disabled in Supabase, proceed to dashboard
+        toast({
+          title: 'Welcome to GlobeTrotter!',
+          description: 'Your passport is ready.',
+          variant: 'success',
+        });
         navigate('/dashboard');
-      }, 2000);
-    } catch {
-      toast({ title: 'Registration failed', description: 'Please check your details and try again.', variant: 'error' });
+      } else {
+        // Show check inbox / email verification state
+        setVerificationPending(true);
+        toast({
+          title: 'Verification email sent ✈️',
+          description: `Please verify your email address to activate your account.`,
+          variant: 'success',
+        });
+      }
+    } catch (err: any) {
+      const errorMessage = err?.message || 'Registration failed. Please try again.';
+      setErrors({ general: errorMessage });
+      toast({
+        title: 'Registration failed',
+        description: errorMessage,
+        variant: 'error',
+      });
     } finally {
       setLoading(false);
     }
   }
+
+  const handleResend = async () => {
+    if (!registeredEmail) return;
+    setResending(true);
+    try {
+      await resendVerificationEmail(registeredEmail);
+      setCooldown(60);
+      toast({
+        title: 'Verification email sent!',
+        description: `Check your inbox at ${registeredEmail}.`,
+        variant: 'success',
+      });
+    } catch (err: any) {
+      toast({
+        title: 'Unable to resend email',
+        description: err.message || 'Please wait a moment before trying again.',
+        variant: 'error',
+      });
+    } finally {
+      setResending(false);
+    }
+  };
 
   // Format options for Country Combobox
   const countryOptions: ComboboxOption[] = countriesList.map((c) => ({
@@ -291,7 +354,7 @@ export default function Signup() {
             <span className="font-serif text-2xl font-semibold text-parchment-50 tracking-tight">GlobeTrotter</span>
           </div>
           <h1 className="font-serif text-2xl sm:text-3xl font-semibold text-parchment-50">Create your traveler passport</h1>
-          <p className="font-sans text-sm text-parchment-100/60 mt-1">
+          <p className="font-sans text-xs sm:text-sm text-parchment-100/60 mt-1">
             Personalize your profile and start crafting multi-city adventures
           </p>
         </div>
@@ -299,28 +362,57 @@ export default function Signup() {
         {/* Boarding Pass Form Card */}
         <div className="boarding-pass p-6 sm:p-10 shadow-2xl relative overflow-hidden">
           <AnimatePresence mode="wait">
-            {isSuccess ? (
+            {verificationPending ? (
               <motion.div
-                key="success"
+                key="verification-pending"
                 initial={{ opacity: 0, scale: 0.95 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0 }}
-                className="py-10 text-center space-y-4"
+                className="py-6 text-center space-y-5"
               >
-                <div className="w-20 h-20 rounded-full bg-teal/15 flex items-center justify-center mx-auto text-teal">
-                  <CheckCircle2 className="w-10 h-10" />
+                <div className="w-16 h-16 rounded-full bg-teal/15 flex items-center justify-center mx-auto text-teal">
+                  <Mail className="w-8 h-8" />
                 </div>
+
                 <div className="space-y-2">
-                  <h2 className="font-serif text-2xl font-semibold text-midnight">Welcome to GlobeTrotter!</h2>
-                  <p className="font-sans text-sm text-ink/70 max-w-md mx-auto">
-                    Your account is ready. Let's start planning your next adventure. Redirecting to your dashboard...
+                  <h2 className="font-serif text-2xl font-semibold text-midnight">Check your inbox ✈️</h2>
+                  <p className="font-sans text-xs text-ink/70 max-w-md mx-auto leading-relaxed">
+                    Your traveler passport is almost ready! We've sent a verification link to:
+                  </p>
+                  <p className="font-mono text-xs font-semibold text-teal bg-teal/10 py-1.5 px-3 rounded-md inline-block max-w-full truncate">
+                    {registeredEmail}
+                  </p>
+                  <p className="font-sans text-xs text-ink/60 max-w-sm mx-auto pt-1">
+                    Verify your email address to activate your account and start planning your next journey.
                   </p>
                 </div>
-                <div className="pt-4 flex justify-center">
-                  <Button onClick={() => navigate('/dashboard')} size="lg" className="inline-flex items-center gap-2">
-                    <span>Enter Dashboard</span>
-                    <ArrowRight className="w-4 h-4" />
+
+                <div className="pt-3 space-y-3 max-w-sm mx-auto">
+                  <Button
+                    onClick={handleResend}
+                    disabled={resending || cooldown > 0}
+                    variant="secondary"
+                    size="lg"
+                    className="w-full text-xs font-medium inline-flex items-center justify-center gap-2"
+                  >
+                    {resending ? (
+                      <span className="inline-flex items-center gap-2">
+                        <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                        Sending link...
+                      </span>
+                    ) : cooldown > 0 ? (
+                      `Resend available in ${cooldown}s`
+                    ) : (
+                      'Resend verification email'
+                    )}
                   </Button>
+
+                  <Link to="/login" className="block w-full">
+                    <Button variant="default" size="lg" className="w-full text-xs inline-flex items-center justify-center gap-1.5">
+                      <ArrowLeft className="w-3.5 h-3.5" />
+                      <span>Back to Sign In</span>
+                    </Button>
+                  </Link>
                 </div>
               </motion.div>
             ) : (
@@ -328,10 +420,24 @@ export default function Signup() {
                 key="form"
                 onSubmit={handleSubmit}
                 noValidate
-                className="space-y-6"
+                className="space-y-5"
                 initial={{ opacity: 1 }}
                 exit={{ opacity: 0 }}
               >
+                {errors.general && (
+                  <div className="p-3 rounded-lg bg-coral/10 border border-coral/30 text-xs font-sans text-coral flex items-start gap-2">
+                    <div className="flex-1">
+                      <span>{errors.general}</span>
+                      {errors.general.includes('already associated') && (
+                        <div className="mt-1 flex gap-3 text-teal font-semibold">
+                          <Link to="/login" className="hover:underline">Sign In</Link>
+                          <Link to="/forgot-password" className="hover:underline">Forgot Password?</Link>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 {/* Profile Photo Section */}
                 <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6 p-4 rounded-xl bg-parchment-200/50 border border-parchment-300/60">
                   <div className="relative group cursor-pointer" onClick={() => fileInputRef.current?.click()}>
@@ -374,7 +480,10 @@ export default function Signup() {
                           type="button"
                           variant="ghost"
                           size="sm"
-                          onClick={() => setPhotoPreview('')}
+                          onClick={() => {
+                            setPhotoPreview('');
+                            setPhotoFile(null);
+                          }}
                           className="text-xs h-8 text-coral hover:text-coral hover:bg-coral/10"
                         >
                           Remove
@@ -402,15 +511,17 @@ export default function Signup() {
                       <Input
                         id="firstName"
                         value={firstName}
-                        onChange={(e) => setFirstName(e.target.value)}
+                        onChange={(e) => {
+                          setFirstName(e.target.value);
+                          if (errors.firstName) setErrors((prev) => ({ ...prev, firstName: '' }));
+                        }}
                         placeholder="Aarav"
                         className="pl-10"
                         aria-invalid={!!errors.firstName}
-                        aria-describedby={errors.firstName ? 'firstName-error' : undefined}
                       />
                     </div>
                     {errors.firstName && (
-                      <p id="firstName-error" className="font-sans text-xs text-coral mt-1.5">{errors.firstName}</p>
+                      <p className="font-sans text-xs text-coral mt-1.5">{errors.firstName}</p>
                     )}
                   </div>
 
@@ -422,15 +533,17 @@ export default function Signup() {
                       <Input
                         id="lastName"
                         value={lastName}
-                        onChange={(e) => setLastName(e.target.value)}
+                        onChange={(e) => {
+                          setLastName(e.target.value);
+                          if (errors.lastName) setErrors((prev) => ({ ...prev, lastName: '' }));
+                        }}
                         placeholder="Mehta"
                         className="pl-10"
                         aria-invalid={!!errors.lastName}
-                        aria-describedby={errors.lastName ? 'lastName-error' : undefined}
                       />
                     </div>
                     {errors.lastName && (
-                      <p id="lastName-error" className="font-sans text-xs text-coral mt-1.5">{errors.lastName}</p>
+                      <p className="font-sans text-xs text-coral mt-1.5">{errors.lastName}</p>
                     )}
                   </div>
 
@@ -443,15 +556,17 @@ export default function Signup() {
                         id="email"
                         type="email"
                         value={email}
-                        onChange={(e) => setEmail(e.target.value)}
+                        onChange={(e) => {
+                          setEmail(e.target.value);
+                          if (errors.email) setErrors((prev) => ({ ...prev, email: '' }));
+                        }}
                         placeholder="traveler@example.com"
                         className="pl-10"
                         aria-invalid={!!errors.email}
-                        aria-describedby={errors.email ? 'email-error' : undefined}
                       />
                     </div>
                     {errors.email && (
-                      <p id="email-error" className="font-sans text-xs text-coral mt-1.5">{errors.email}</p>
+                      <p className="font-sans text-xs text-coral mt-1.5">{errors.email}</p>
                     )}
                   </div>
 
@@ -480,11 +595,13 @@ export default function Signup() {
                         id="password"
                         type={showPassword ? 'text' : 'password'}
                         value={password}
-                        onChange={(e) => setPassword(e.target.value)}
+                        onChange={(e) => {
+                          setPassword(e.target.value);
+                          if (errors.password) setErrors((prev) => ({ ...prev, password: '' }));
+                        }}
                         placeholder="At least 6 characters"
                         className="pl-10 pr-10"
                         aria-invalid={!!errors.password}
-                        aria-describedby={errors.password ? 'password-error' : undefined}
                       />
                       <button
                         type="button"
@@ -496,7 +613,7 @@ export default function Signup() {
                       </button>
                     </div>
                     {errors.password && (
-                      <p id="password-error" className="font-sans text-xs text-coral mt-1.5">{errors.password}</p>
+                      <p className="font-sans text-xs text-coral mt-1.5">{errors.password}</p>
                     )}
                     {/* Password Strength Indicator */}
                     {password && (
@@ -530,11 +647,13 @@ export default function Signup() {
                         id="confirmPassword"
                         type={showConfirmPassword ? 'text' : 'password'}
                         value={confirmPassword}
-                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        onChange={(e) => {
+                          setConfirmPassword(e.target.value);
+                          if (errors.confirmPassword) setErrors((prev) => ({ ...prev, confirmPassword: '' }));
+                        }}
                         placeholder="Re-enter your password"
                         className="pl-10 pr-10"
                         aria-invalid={!!errors.confirmPassword}
-                        aria-describedby={errors.confirmPassword ? 'confirm-error' : undefined}
                       />
                       <button
                         type="button"
@@ -546,7 +665,7 @@ export default function Signup() {
                       </button>
                     </div>
                     {errors.confirmPassword && (
-                      <p id="confirm-error" className="font-sans text-xs text-coral mt-1.5">{errors.confirmPassword}</p>
+                      <p className="font-sans text-xs text-coral mt-1.5">{errors.confirmPassword}</p>
                     )}
                   </div>
 
@@ -647,8 +766,8 @@ export default function Signup() {
                 <Button type="submit" size="lg" className="w-full text-base" disabled={loading}>
                   {loading ? (
                     <span className="inline-flex items-center gap-2">
-                      <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      Creating your journey...
+                      <Loader2 className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Creating your passport...
                     </span>
                   ) : (
                     <span className="inline-flex items-center gap-2">

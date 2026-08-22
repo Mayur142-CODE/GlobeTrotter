@@ -4,10 +4,16 @@ import { Sidebar } from '@/components/layout/Sidebar';
 import { Navbar } from '@/components/layout/Navbar';
 import { Footer } from '@/components/layout/Footer';
 import { ToastProvider } from '@/hooks/use-toast';
+import { AuthProvider } from '@/contexts/AuthContext';
+import { ProtectedRoute } from '@/components/auth/ProtectedRoute';
 
 const Login = lazy(() => import('@/pages/Login'));
 const Signup = lazy(() => import('@/pages/Signup'));
 const ForgotPassword = lazy(() => import('@/pages/ForgotPassword'));
+const ResetPassword = lazy(() => import('@/pages/ResetPassword'));
+const VerifyEmail = lazy(() => import('@/pages/VerifyEmail'));
+const AuthCallback = lazy(() => import('@/pages/AuthCallback'));
+
 const Dashboard = lazy(() => import('@/pages/Dashboard'));
 const MyTrips = lazy(() => import('@/pages/MyTrips'));
 const CreateTrip = lazy(() => import('@/pages/CreateTrip'));
@@ -57,33 +63,46 @@ function PublicLayout() {
 
 export default function App() {
   return (
-    <ToastProvider>
-      <BrowserRouter>
-        <Routes>
-          <Route element={<PublicLayout />}>
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<Signup />} />
-            <Route path="/register" element={<Signup />} />
-            <Route path="/forgot-password" element={<ForgotPassword />} />
-            <Route path="/shared/:tripId" element={<SharedItinerary />} />
-          </Route>
-          <Route element={<AppLayout />}>
-            <Route path="/dashboard" element={<Dashboard />} />
-            <Route path="/trips" element={<MyTrips />} />
-            <Route path="/trips/create" element={<CreateTrip />} />
-            <Route path="/itinerary/:tripId" element={<ItineraryBuilder />} />
-            <Route path="/itinerary/:tripId/view" element={<ItineraryView />} />
-            <Route path="/search/cities" element={<CitySearch />} />
-            <Route path="/search/activities" element={<ActivitySearch />} />
-            <Route path="/trip/:tripId/budget" element={<TripBudget />} />
-            <Route path="/trip/:tripId/calendar" element={<TripCalendar />} />
-            <Route path="/profile" element={<Profile />} />
-            <Route path="/admin" element={<AdminDashboard />} />
-          </Route>
-          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-      </BrowserRouter>
-    </ToastProvider>
+    <AuthProvider>
+      <ToastProvider>
+        <BrowserRouter>
+          <Routes>
+            {/* Public Authentication & Callback Routes */}
+            <Route element={<PublicLayout />}>
+              <Route path="/login" element={<Login />} />
+              <Route path="/signup" element={<Signup />} />
+              <Route path="/register" element={<Signup />} />
+              <Route path="/forgot-password" element={<ForgotPassword />} />
+              <Route path="/reset-password" element={<ResetPassword />} />
+              <Route path="/auth/reset-password" element={<ResetPassword />} />
+              <Route path="/verify-email" element={<VerifyEmail />} />
+              <Route path="/auth/callback" element={<AuthCallback />} />
+              <Route path="/shared/:tripId" element={<SharedItinerary />} />
+            </Route>
+
+            {/* Protected Application Routes */}
+            <Route element={<ProtectedRoute />}>
+              <Route element={<AppLayout />}>
+                <Route path="/dashboard" element={<Dashboard />} />
+                <Route path="/trips" element={<MyTrips />} />
+                <Route path="/trips/create" element={<CreateTrip />} />
+                <Route path="/itinerary/:tripId" element={<ItineraryBuilder />} />
+                <Route path="/itinerary/:tripId/view" element={<ItineraryView />} />
+                <Route path="/search/cities" element={<CitySearch />} />
+                <Route path="/search/activities" element={<ActivitySearch />} />
+                <Route path="/trip/:tripId/budget" element={<TripBudget />} />
+                <Route path="/trip/:tripId/calendar" element={<TripCalendar />} />
+                <Route path="/profile" element={<Profile />} />
+                <Route path="/admin" element={<AdminDashboard />} />
+              </Route>
+            </Route>
+
+            {/* Default Navigation */}
+            <Route path="/" element={<Navigate to="/dashboard" replace />} />
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+        </BrowserRouter>
+      </ToastProvider>
+    </AuthProvider>
   );
 }

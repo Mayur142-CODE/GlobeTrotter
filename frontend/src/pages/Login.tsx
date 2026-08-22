@@ -1,29 +1,34 @@
 import { useState, type FormEvent } from 'react';
-import { useNavigate, Link } from 'react-router-dom';
+import { useNavigate, Link, useLocation } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Plane, Mail, Lock, ArrowRight, Eye, EyeOff, Check } from 'lucide-react';
+import { Plane, Mail, Lock, ArrowRight, Eye, EyeOff, Check, Loader2 } from 'lucide-react';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Button } from '@/components/ui/button';
 import { useToast } from '@/hooks/use-toast';
-import { login } from '@/services/authService';
+import { useAuth } from '@/contexts/AuthContext';
 
 export default function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
   const toast = useToast();
+  const { signIn } = useAuth();
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
-  const [rememberMe, setRememberMe] = useState(false);
-  const [errors, setErrors] = useState<{ email?: string; password?: string }>({});
+  const [rememberMe, setRememberMe] = useState(true);
+  const [errors, setErrors] = useState<{ email?: string; password?: string; general?: string }>({});
   const [loading, setLoading] = useState(false);
+
+  const from = (location.state as any)?.from?.pathname || '/dashboard';
 
   function validate(): boolean {
     const e: typeof errors = {};
     if (!email.trim()) {
-      e.email = 'Username or email is required';
-    } else if (email.includes('@') && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      e.email = 'Enter a valid email address';
+      e.email = 'Email address is required';
+    } else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim())) {
+      e.email = 'Please enter a valid email address.';
     }
     if (!password) {
       e.password = 'Password is required';
@@ -38,12 +43,36 @@ export default function Login() {
     e.preventDefault();
     if (!validate()) return;
     setLoading(true);
+    setErrors({});
+
     try {
-      await login(email, password);
-      toast({ title: 'Welcome back!', description: 'You are now signed in.', variant: 'success' });
-      navigate('/dashboard');
-    } catch {
-      toast({ title: 'Sign-in failed', description: 'Please check your credentials and try again.', variant: 'error' });
+      const { isVerified } = await signIn(email, password);
+
+      if (!isVerified) {
+        toast({
+          title: 'Email verification required',
+          description: "Please confirm your email address before accessing GlobeTrotter.",
+          variant: 'default',
+        });
+        navigate('/verify-email', { state: { email } });
+        return;
+      }
+
+      toast({
+        title: 'Welcome back!',
+        description: 'Your journey continues.',
+        variant: 'success',
+      });
+
+      navigate(from, { replace: true });
+    } catch (err: any) {
+      const errorMessage = err?.message || 'Email or password is incorrect.';
+      setErrors({ general: errorMessage });
+      toast({
+        title: 'Sign in failed',
+        description: errorMessage,
+        variant: 'error',
+      });
     } finally {
       setLoading(false);
     }
@@ -65,20 +94,29 @@ export default function Login() {
             <span className="font-serif text-2xl font-semibold text-parchment-50 tracking-tight">GlobeTrotter</span>
           </div>
           <h1 className="font-serif text-2xl font-semibold text-parchment-50">Welcome back, traveler</h1>
-          <p className="font-sans text-sm text-parchment-100/60 mt-1">Sign in to continue your journey</p>
+          <p className="font-sans text-xs text-parchment-100/60 mt-1">Sign in to continue your journey</p>
         </div>
 
-        <div className="boarding-pass p-6 sm:p-8">
+        <div className="boarding-pass p-6 sm:p-8 shadow-2xl">
+          {errors.general && (
+            <div className="mb-4 p-3 rounded-lg bg-coral/10 border border-coral/30 text-xs font-sans text-coral">
+              {errors.general}
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} noValidate className="space-y-4">
             <div>
-              <Label htmlFor="email">Username or Email</Label>
+              <Label htmlFor="email">Email Address</Label>
               <div className="relative mt-1">
                 <Mail className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/40" aria-hidden />
                 <Input
                   id="email"
-                  type="text"
+                  type="email"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (errors.email) setErrors((prev) => ({ ...prev, email: '' }));
+                  }}
                   placeholder="traveler@example.com"
                   className="pl-10"
                   aria-invalid={!!errors.email}
@@ -96,7 +134,10 @@ export default function Login() {
                   id="password"
                   type={showPassword ? 'text' : 'password'}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (errors.password) setErrors((prev) => ({ ...prev, password: '' }));
+                  }}
                   placeholder="••••••••"
                   className="pl-10 pr-10"
                   aria-invalid={!!errors.password}
@@ -149,8 +190,17 @@ export default function Login() {
             </div>
 
             <Button type="submit" size="lg" className="w-full mt-2" disabled={loading}>
-              {loading ? 'Signing in…' : 'Continue Journey'}
-              {!loading && <ArrowRight className="w-4 h-4" aria-hidden />}
+              {loading ? (
+                <span className="inline-flex items-center gap-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  Checking your passport...
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-2">
+                  <span>Continue Journey</span>
+                  <ArrowRight className="w-4 h-4" />
+                </span>
+              )}
             </Button>
           </form>
 
@@ -170,4 +220,3 @@ export default function Login() {
     </div>
   );
 }
-
