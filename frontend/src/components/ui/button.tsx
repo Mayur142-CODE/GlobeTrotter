@@ -1,7 +1,7 @@
 import { forwardRef, type ButtonHTMLAttributes } from 'react';
 import { cn } from '@/lib/utils';
 
-type Variant = 'primary' | 'secondary' | 'coral' | 'outline' | 'ghost' | 'gold';
+type Variant = 'default' | 'primary' | 'secondary' | 'coral' | 'outline' | 'ghost' | 'gold';
 type Size = 'sm' | 'md' | 'lg' | 'icon';
 
 export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
@@ -10,6 +10,7 @@ export interface ButtonProps extends ButtonHTMLAttributes<HTMLButtonElement> {
 }
 
 const variantClasses: Record<Variant, string> = {
+  default: 'bg-teal text-parchment-50 hover:bg-teal-600 active:bg-teal-700',
   primary: 'bg-teal text-parchment-50 hover:bg-teal-600 active:bg-teal-700',
   secondary: 'bg-midnight text-parchment-50 hover:bg-midnight-600 active:bg-midnight-700',
   coral: 'bg-coral text-parchment-50 hover:bg-coral-600 active:bg-coral-700',

@@ -2,7 +2,7 @@ import type { Stop } from '@/types/stop';
 import type { Activity } from '@/types/activity';
 import { supabase } from '@/lib/supabase';
 import { getTrip } from './tripService';
-import { addDays, diffDays, getNextStopArrival, validateNewStopDates } from '@/lib/dateSequence';
+import { addDays, diffDays, validateNewStopDates } from '@/lib/dateSequence';
 
 export interface AddActivityOptions {
   scheduledDate?: string;

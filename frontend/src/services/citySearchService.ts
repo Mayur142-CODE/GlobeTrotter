@@ -160,7 +160,7 @@ export async function updateCity(id: string, updates: Partial<CreateCityPayload>
 }
 
 export async function deleteCity(id: string): Promise<boolean> {
-  const { data, error } = await supabase.from('destinations').delete().eq('id', id).select('id');
+  const { error } = await supabase.from('destinations').delete().eq('id', id);
   if (error) {
     throw new Error(error.message);
   }

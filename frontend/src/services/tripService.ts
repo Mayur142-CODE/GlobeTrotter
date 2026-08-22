@@ -54,10 +54,12 @@ interface SupabaseTripStop {
 interface SupabaseExpense {
   id: string;
   trip_id: string;
+  stop_id?: string | null;
   category: string;
   amount: number | string;
   expense_date: string;
   description?: string | null;
+  created_at?: string;
 }
 
 interface SupabaseTripRow {
@@ -469,17 +471,51 @@ function mapSupabaseTrip(t: SupabaseTripRow): Trip {
     stops,
     budget: {
       tripId: t.id,
+      budgetLimit: t.budget_limit ? Number(t.budget_limit) : undefined,
       total: grandTotal,
       averagePerDay: Math.round(grandTotal / days),
       dailyLimit: Math.round((Number(t.budget_limit) || grandTotal) / days),
-      lineItems: expenses.map((e) => ({
-        id: e.id,
-        category: e.category,
-        amount: Number(e.amount),
-        date: e.expense_date,
-        note: e.description || undefined,
-      })),
+      lineItems: [
+        {
+          category: 'Activities',
+          amount: totalActivityCost,
+          percentage: grandTotal > 0 ? Math.round((totalActivityCost / grandTotal) * 100) : 0,
+        },
+        {
+          category: 'Transport',
+          amount: expenses.filter((e) => e.category === 'transport').reduce((sum, e) => sum + (Number(e.amount) || 0), 0),
+          percentage: grandTotal > 0 ? Math.round((expenses.filter((e) => e.category === 'transport').reduce((sum, e) => sum + (Number(e.amount) || 0), 0) / grandTotal) * 100) : 0,
+        },
+        {
+          category: 'Accommodation',
+          amount: expenses.filter((e) => e.category === 'accommodation').reduce((sum, e) => sum + (Number(e.amount) || 0), 0),
+          percentage: grandTotal > 0 ? Math.round((expenses.filter((e) => e.category === 'accommodation').reduce((sum, e) => sum + (Number(e.amount) || 0), 0) / grandTotal) * 100) : 0,
+        },
+        {
+          category: 'Meals',
+          amount: expenses.filter((e) => e.category === 'meals').reduce((sum, e) => sum + (Number(e.amount) || 0), 0),
+          percentage: grandTotal > 0 ? Math.round((expenses.filter((e) => e.category === 'meals').reduce((sum, e) => sum + (Number(e.amount) || 0), 0) / grandTotal) * 100) : 0,
+        },
+        {
+          category: 'Misc',
+          amount: expenses.filter((e) => e.category === 'other').reduce((sum, e) => sum + (Number(e.amount) || 0), 0),
+          percentage: grandTotal > 0 ? Math.round((expenses.filter((e) => e.category === 'other').reduce((sum, e) => sum + (Number(e.amount) || 0), 0) / grandTotal) * 100) : 0,
+        },
+      ],
       daily: [],
+      expenses: expenses.map((e) => ({
+        id: e.id,
+        tripId: t.id,
+        stopId: e.stop_id || null,
+        category: (['transport', 'accommodation', 'activities', 'meals', 'other'].includes(e.category)
+          ? e.category
+          : 'other') as any,
+        description: e.description || '',
+        amount: Number(e.amount) || 0,
+        currency: 'INR',
+        expenseDate: e.expense_date,
+        createdAt: e.created_at || new Date().toISOString(),
+      })),
     },
     createdAt: t.created_at || new Date().toISOString(),
   };

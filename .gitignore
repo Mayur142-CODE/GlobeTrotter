@@ -10,6 +10,8 @@ backend/.env
 
 # Supabase CLI
 .supabase/
+.temp/
+backend/supabase/.temp/
 
 # Dependencies & Build outputs
 node_modules/

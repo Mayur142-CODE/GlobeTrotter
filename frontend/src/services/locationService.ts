@@ -90,6 +90,7 @@ export async function searchCities(countryId: string, query = ''): Promise<CityL
       let results: CityLocation[] = (data as DestinationRow[]).map((d) => ({
         id: d.id,
         countryId: targetCountryId,
+        countryName: d.country || countryName,
         name: d.name,
         state: d.region || '',
         latitude: Number(d.latitude) || 0,

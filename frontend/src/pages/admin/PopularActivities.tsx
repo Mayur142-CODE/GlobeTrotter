@@ -7,8 +7,6 @@ import {
   ArrowUpDown,
   TrendingUp,
   MapPin,
-  Clock,
-  Star,
 } from 'lucide-react';
 import { getAdminPopularActivities, type PopularActivityItem } from '@/services/adminService';
 import { Input } from '@/components/ui/input';

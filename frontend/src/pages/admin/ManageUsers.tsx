@@ -3,18 +3,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   Users,
   Search,
-  Filter,
   MapPin,
   Calendar,
   Eye,
   X,
-  Phone,
   Mail,
   Plane,
   ArrowUpDown,
   Lock,
   Globe,
-  Compass,
 } from 'lucide-react';
 import {
   getAdminUsers,

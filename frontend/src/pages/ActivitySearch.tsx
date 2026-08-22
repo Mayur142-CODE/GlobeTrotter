@@ -463,8 +463,7 @@ export default function ActivitySearch() {
         onConfirm={handleDeleteConfirm}
         title="Delete Activity"
         description="Are you sure you want to delete this activity? This will permanently remove it from Supabase."
-        confirmText="Delete"
-        variant="danger"
+        confirmLabel="Delete"
       />
     </PageContainer>
   );

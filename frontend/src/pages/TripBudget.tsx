@@ -1,8 +1,8 @@
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { ArrowLeft, Wallet, TrendingUp, AlertTriangle, Calendar, Plus, Trash2, Tag, FileText } from 'lucide-react';
-import type { BudgetBreakdown, ExpenseCategory, ExpenseItem } from '@/types/budget';
+import { ArrowLeft, Wallet, TrendingUp, AlertTriangle, Calendar, Plus, Trash2 } from 'lucide-react';
+import type { BudgetBreakdown, ExpenseCategory } from '@/types/budget';
 import type { Trip } from '@/types/trip';
 import { getBudgetBreakdown, createExpense, deleteExpense } from '@/services/budgetService';
 import { getTrip } from '@/services/tripService';
@@ -12,7 +12,7 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select } from '@/components/ui/select';
-import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogContent, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
@@ -161,6 +161,11 @@ export default function TripBudget() {
           <div className="text-right">
             <span className="ticket-mono text-xs text-ink/50 block">TARGET BUDGET</span>
             <span className="ticket-mono text-xl font-bold text-teal">{formatCurrency(budget.budgetLimit)}</span>
+            {remainingBudget !== null && (
+              <span className={`ticket-mono text-xs font-semibold block mt-0.5 ${remainingBudget >= 0 ? 'text-teal' : 'text-coral'}`}>
+                {remainingBudget >= 0 ? `${formatCurrency(remainingBudget)} remaining` : `${formatCurrency(Math.abs(remainingBudget))} over target`}
+              </span>
+            )}
           </div>
         )}
       </div>

@@ -3,15 +3,13 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence, Reorder } from 'framer-motion';
 import {
   ArrowLeft,
-  Calendar as CalendarIcon,
+  Calendar,
   MapPin,
   ChevronDown,
-  Clock,
   Wallet,
   GripVertical,
   Pencil,
   Trash2,
-  Plus,
 } from 'lucide-react';
 import type { Trip } from '@/types/trip';
 import type { Stop } from '@/types/stop';
@@ -28,7 +26,7 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogContent, DialogFooter } from '@/components/ui/dialog';
+import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog';
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { ConfirmDialog } from '@/components/shared/ConfirmDialog';

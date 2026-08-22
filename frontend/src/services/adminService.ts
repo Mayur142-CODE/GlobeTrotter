@@ -137,13 +137,13 @@ export async function getAdminUsers(searchQuery = ''): Promise<AdminUserItem[]> 
 
         userMap.set(userId, {
           id: userId,
-          name: 'Mayur Chavda', // Primary traveler identity
-          firstName: 'Mayur',
-          lastName: 'Chavda',
-          email: 'mayur.chavda@example.com',
-          phone: '+91 98765 43210',
-          city: firstStop?.name || 'Mumbai',
-          country: firstStop?.country || 'India',
+          name: `Traveler (${userId.slice(0, 8)})`,
+          firstName: 'Traveler',
+          lastName: userId.slice(0, 6),
+          email: `user-${userId.slice(0, 8)}@globetrotter.travel`,
+          phone: '',
+          city: firstStop?.name || 'Global',
+          country: firstStop?.country || 'Earth',
           avatarUrl: '',
           joinedAt: firstTrip?.created_at || new Date().toISOString(),
           tripCount: userTripsList.length,

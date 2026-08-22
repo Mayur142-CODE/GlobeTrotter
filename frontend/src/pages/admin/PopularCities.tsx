@@ -7,7 +7,6 @@ import {
   Filter,
   TrendingUp,
   Globe,
-  Sparkles,
 } from 'lucide-react';
 import { getAdminPopularCities, type PopularCityItem } from '@/services/adminService';
 import { Input } from '@/components/ui/input';

@@ -7,10 +7,8 @@ import {
   Calendar,
   Wallet,
   Clock,
-  Share2,
   Copy,
   Check,
-  ArrowRight,
   Facebook,
   Twitter,
   MessageCircle,
@@ -26,7 +24,7 @@ import { FlightPathLine } from '@/components/itinerary/FlightPathLine';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { useToast } from '@/hooks/use-toast';
-import { formatCurrency, formatDateShort, formatDate, daysBetween } from '@/lib/utils';
+import { formatCurrency, formatDateShort, daysBetween } from '@/lib/utils';
 
 export default function SharedItinerary() {
   const { tripId } = useParams<{ tripId: string }>();

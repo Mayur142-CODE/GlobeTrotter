@@ -115,8 +115,10 @@ export default function ItineraryBuilder() {
   async function handleAddStop(city: City, startDate: string, endDate: string): Promise<boolean> {
     if (!tripId) return false;
     try {
-      const newStop = await addStop(tripId, city, startDate, endDate);
-      setStops((prev) => [...prev, newStop]);
+      const newStop = await addStop(tripId, { cityId: city.id, startDate, endDate });
+      if (newStop) {
+        setStops((prev) => [...prev, newStop]);
+      }
       setAddStopOpen(false);
       toast({
         title: 'Stop added',
@@ -266,8 +268,7 @@ export default function ItineraryBuilder() {
         <EmptyState
           title="Trip not found"
           description="The itinerary you are looking for does not exist or has been removed."
-          actionLabel="Back to Trips"
-          onAction={() => navigate('/trips')}
+          action={<Button onClick={() => navigate('/trips')}>Back to Trips</Button>}
         />
       </PageContainer>
     );
@@ -347,7 +348,13 @@ export default function ItineraryBuilder() {
       {stops.length > 1 && (
         <div className="mb-8 boarding-pass p-4">
           <h2 className="font-serif text-sm font-semibold text-midnight mb-3">Multi-City Routing Timeline</h2>
-          <FlightPathLine stops={stops} />
+          <FlightPathLine
+            stops={stops.map((s) => ({
+              id: s.id,
+              label: s.city.name,
+              sublabel: `${formatDateShort(s.startDate)} — ${formatDateShort(s.endDate)}`,
+            }))}
+          />
         </div>
       )}
 
@@ -378,13 +385,10 @@ export default function ItineraryBuilder() {
                 <StopCard
                   stop={stop}
                   index={index}
-                  totalStops={stops.length}
-                  tripStart={trip.startDate}
-                  tripEnd={trip.endDate}
                   onAddActivity={() => setAddActivityForStop(stop)}
-                  onEditStop={() => setEditingStop(stop)}
-                  onDeleteStop={() => setDeletingStopId(stop.id)}
-                  onRemoveActivity={(actId) => handleRemoveActivity(stop.id, actId)}
+                  onEdit={() => setEditingStop(stop)}
+                  onRemove={() => setDeletingStopId(stop.id)}
+                  onActivityRemove={(actId: string) => handleRemoveActivity(stop.id, actId)}
                 />
               </Reorder.Item>
             ))}
@@ -629,7 +633,7 @@ function AddStopDialog({
               <div>
                 <div className="flex items-center gap-1 mb-1">
                   <Label htmlFor="stop-start">Arrival Date</Label>
-                  <Lock className="w-3 h-3 text-ink/40" title="Locked by sequence" />
+                  <Lock className="w-3 h-3 text-ink/40" />
                 </div>
                 <Input
                   id="stop-start"
