@@ -308,8 +308,10 @@ export default function Signup() {
       });
 
       setRegisteredEmail(email.trim());
+      sessionStorage.setItem('globetrotter_pending_verification_email', email.trim());
 
       if (isVerified) {
+        sessionStorage.removeItem('globetrotter_pending_verification_email');
         toast({
           title: 'Welcome to GlobeTrotter!',
           description: 'Your passport is ready.',

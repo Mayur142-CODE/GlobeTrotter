@@ -49,15 +49,17 @@ export default function Login() {
       const { isVerified } = await signIn(email, password);
 
       if (!isVerified) {
+        sessionStorage.setItem('globetrotter_pending_verification_email', email.trim());
         toast({
           title: 'Email verification required',
           description: "Please confirm your email address before accessing GlobeTrotter.",
           variant: 'default',
         });
-        navigate('/verify-email', { state: { email } });
+        navigate('/verify-email', { state: { email: email.trim() } });
         return;
       }
 
+      sessionStorage.removeItem('globetrotter_pending_verification_email');
       toast({
         title: 'Welcome back!',
         description: 'Your journey continues.',
@@ -67,6 +69,9 @@ export default function Login() {
       navigate(from, { replace: true });
     } catch (err: any) {
       const errorMessage = err?.message || 'Email or password is incorrect.';
+      if (errorMessage.toLowerCase().includes('not confirmed') || errorMessage.toLowerCase().includes('verify')) {
+        sessionStorage.setItem('globetrotter_pending_verification_email', email.trim());
+      }
       setErrors({ general: errorMessage });
       toast({
         title: 'Sign in failed',
@@ -101,6 +106,13 @@ export default function Login() {
           {errors.general && (
             <div className="mb-4 p-3 rounded-lg bg-coral/10 border border-coral/30 text-xs font-sans text-coral">
               {errors.general}
+              {(errors.general.toLowerCase().includes('verify') || errors.general.toLowerCase().includes('confirmed')) && (
+                <div className="mt-1.5 pt-1.5 border-t border-coral/20">
+                  <Link to="/verify-email" className="font-semibold text-teal hover:underline">
+                    Go to verification page →
+                  </Link>
+                </div>
+              )}
             </div>
           )}
 
