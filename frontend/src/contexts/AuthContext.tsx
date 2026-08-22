@@ -80,7 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Fetch or upsert profile in public.profiles
+  // Fetch or upsert profile in public.profiles with optimistic fallback & timeout
   const loadProfile = useCallback(async (sbUser: SupabaseUser | null): Promise<UserProfile | null> => {
     if (!sbUser) {
       setProfile(null);
@@ -88,66 +88,115 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       return null;
     }
 
+    const meta = sbUser.user_metadata || {};
+    const metaFirstName = meta.first_name || '';
+    const metaLastName = meta.last_name || '';
+    const metaFullName = `${metaFirstName} ${metaLastName}`.trim() || meta.name || sbUser.email?.split('@')[0] || 'Traveler';
+    const metaAvatarUrl = (meta.avatar_url && !meta.avatar_url.startsWith('data:') ? meta.avatar_url : '') || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400';
+
+    const optimisticProfile: UserProfile = {
+      id: sbUser.id,
+      first_name: metaFirstName,
+      last_name: metaLastName,
+      phone: meta.phone || '',
+      city: meta.city || '',
+      country: meta.country || '',
+      country_id: meta.country_id || '',
+      city_id: meta.city_id || '',
+      additional_info: meta.additional_info || '',
+      avatar_url: metaAvatarUrl,
+      language: 'en',
+      created_at: sbUser.created_at,
+    };
+
+    const optimisticUser: User = {
+      id: sbUser.id,
+      name: metaFullName,
+      firstName: metaFirstName,
+      lastName: metaLastName,
+      email: sbUser.email || '',
+      avatarUrl: metaAvatarUrl,
+      phone: optimisticProfile.phone,
+      city: optimisticProfile.city,
+      cityId: optimisticProfile.city_id,
+      country: optimisticProfile.country,
+      countryId: optimisticProfile.country_id,
+      additionalInfo: optimisticProfile.additional_info,
+      language: 'en',
+      savedDestinationIds: [],
+      role: 'traveler',
+      joinedAt: sbUser.created_at,
+      emailConfirmed: !!(sbUser.email_confirmed_at || sbUser.confirmed_at),
+    };
+
+    // Set immediate state so UI is updated synchronously
+    setProfile((prev) => prev || optimisticProfile);
+    setUser((prev) => prev || optimisticUser);
+
     try {
-      const { data, error } = await supabase
+      // Race DB query with a 2-second timeout so slow DB queries never block the app
+      const fetchPromise = supabase
         .from('profiles')
         .select('*')
         .eq('id', sbUser.id)
         .maybeSingle();
 
+      const timeoutPromise = new Promise<{ data: null; error: null }>((resolve) =>
+        setTimeout(() => resolve({ data: null, error: null }), 2000)
+      );
+
+      const { data, error } = await Promise.race([fetchPromise, timeoutPromise]);
+
       if (error && error.code !== 'PGRST116') {
         console.warn('[GlobeTrotter] Could not load profile from database:', error.message);
       }
 
-      const meta = sbUser.user_metadata || {};
-      const firstName = data?.first_name || meta.first_name || '';
-      const lastName = data?.last_name || meta.last_name || '';
-      const fullName = `${firstName} ${lastName}`.trim() || meta.name || sbUser.email?.split('@')[0] || 'Traveler';
-      const avatarUrl = data?.avatar_url || (meta.avatar_url && !meta.avatar_url.startsWith('data:') ? meta.avatar_url : '') || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400';
+      if (data) {
+        const firstName = data.first_name || metaFirstName;
+        const lastName = data.last_name || metaLastName;
+        const fullName = `${firstName} ${lastName}`.trim() || metaFullName;
+        const avatarUrl = data.avatar_url || metaAvatarUrl;
 
-      const currentProfile: UserProfile = {
-        id: sbUser.id,
-        first_name: firstName,
-        last_name: lastName,
-        phone: data?.phone || meta.phone || '',
-        city: data?.city || meta.city || '',
-        country: data?.country || meta.country || '',
-        country_id: data?.country_id || meta.country_id || '',
-        city_id: data?.city_id || meta.city_id || '',
-        additional_info: data?.additional_info || meta.additional_info || '',
-        avatar_url: avatarUrl,
-        language: data?.language || 'en',
-        created_at: data?.created_at || sbUser.created_at,
-        updated_at: data?.updated_at,
-      };
+        const currentProfile: UserProfile = {
+          id: sbUser.id,
+          first_name: firstName,
+          last_name: lastName,
+          phone: data.phone || optimisticProfile.phone,
+          city: data.city || optimisticProfile.city,
+          country: data.country || optimisticProfile.country,
+          country_id: data.country_id || optimisticProfile.country_id,
+          city_id: data.city_id || optimisticProfile.city_id,
+          additional_info: data.additional_info || optimisticProfile.additional_info,
+          avatar_url: avatarUrl,
+          language: data.language || 'en',
+          created_at: data.created_at || sbUser.created_at,
+          updated_at: data.updated_at,
+        };
 
-      const appUser: User = {
-        id: sbUser.id,
-        name: fullName,
-        firstName,
-        lastName,
-        email: sbUser.email || '',
-        avatarUrl,
-        phone: currentProfile.phone,
-        city: currentProfile.city,
-        cityId: currentProfile.city_id,
-        country: currentProfile.country,
-        countryId: currentProfile.country_id,
-        additionalInfo: currentProfile.additional_info,
-        language: currentProfile.language || 'en',
-        savedDestinationIds: [],
-        role: 'traveler',
-        joinedAt: currentProfile.created_at || new Date().toISOString(),
-        emailConfirmed: !!(sbUser.email_confirmed_at || sbUser.confirmed_at),
-      };
+        const appUser: User = {
+          ...optimisticUser,
+          name: fullName,
+          firstName,
+          lastName,
+          avatarUrl,
+          phone: currentProfile.phone,
+          city: currentProfile.city,
+          cityId: currentProfile.city_id,
+          country: currentProfile.country,
+          countryId: currentProfile.country_id,
+          additionalInfo: currentProfile.additional_info,
+          language: currentProfile.language || 'en',
+        };
 
-      setProfile(currentProfile);
-      setUser(appUser);
-      return currentProfile;
+        setProfile(currentProfile);
+        setUser(appUser);
+        return currentProfile;
+      }
     } catch (err) {
-      console.error('[GlobeTrotter] Profile error:', err);
-      return null;
+      console.warn('[GlobeTrotter] Profile load exception:', err);
     }
+
+    return optimisticProfile;
   }, []);
 
   // Initialize session on mount and listen to changes
@@ -166,7 +215,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setSession(currentSession);
           setSupabaseUser(currentSession?.user || null);
           if (currentSession?.user) {
-            await loadProfile(currentSession.user);
+            loadProfile(currentSession.user);
           }
         }
       } catch (err) {
@@ -183,12 +232,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Subscribe to auth events
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange(async (_event, newSession) => {
+    } = supabase.auth.onAuthStateChange((_event, newSession) => {
       if (!mounted) return;
       setSession(newSession);
       setSupabaseUser(newSession?.user || null);
       if (newSession?.user) {
-        await loadProfile(newSession.user);
+        loadProfile(newSession.user);
       } else {
         setProfile(null);
         setUser(null);
@@ -248,7 +297,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const isVerified = !!(data.user.email_confirmed_at || data.user.confirmed_at);
       setSupabaseUser(data.user);
       setSession(data.session);
-      await loadProfile(data.user);
+
+      // Trigger profile load non-blockingly so signIn returns immediately
+      loadProfile(data.user);
 
       return { user: data.user, isVerified };
     } finally {

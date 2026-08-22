@@ -1,11 +1,15 @@
 import type { Country, CityLocation } from '@/types/location';
 import { countriesData } from '@/data/countriesData';
 import { citiesData } from '@/data/citiesData';
+import { supabase } from '@/lib/supabase';
 
-const LATENCY = 150;
-
-function delay<T>(value: T, ms = LATENCY): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(value), ms));
+interface DestinationRow {
+  id: string;
+  name: string;
+  country: string;
+  region?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
 }
 
 /**
@@ -14,7 +18,7 @@ function delay<T>(value: T, ms = LATENCY): Promise<T> {
 export async function getCountries(): Promise<Country[]> {
   try {
     const sorted = [...countriesData].sort((a, b) => a.name.localeCompare(b.name));
-    return await delay(sorted);
+    return sorted;
   } catch (err) {
     console.error('Error fetching countries:', err);
     throw new Error('Unable to load countries. Please try again.');
@@ -38,14 +42,13 @@ export async function searchCountries(query: string): Promise<Country[]> {
           c.iso3.toLowerCase().includes(q)
       )
       .sort((a, b) => {
-        // Prioritize exact prefix match
         const aStarts = a.name.toLowerCase().startsWith(q);
         const bStarts = b.name.toLowerCase().startsWith(q);
         if (aStarts && !bStarts) return -1;
         if (!aStarts && bStarts) return 1;
         return a.name.localeCompare(b.name);
       });
-    return await delay(filtered, 80);
+    return filtered;
   } catch (err) {
     console.error('Error searching countries:', err);
     throw new Error('Unable to search countries.');
@@ -64,50 +67,60 @@ export function getCountryById(countryId: string): Country | undefined {
 }
 
 /**
- * Dynamic search for cities within a selected country.
- * Returns matching cities filtered by name or state (case-insensitive, trimmed).
+ * Dynamic search for cities within a selected country (queries Supabase destinations table).
  */
 export async function searchCities(countryId: string, query = ''): Promise<CityLocation[]> {
-  try {
-    if (!countryId) {
-      return [];
-    }
-
-    const country = getCountryById(countryId);
-    const targetCountryId = country?.id || countryId;
-
-    // Filter cities by selected country
-    let countryCities = citiesData.filter(
-      (city) => city.countryId.toLowerCase() === targetCountryId.toLowerCase()
-    );
-
-    const q = query.trim().toLowerCase();
-    if (q) {
-      countryCities = countryCities.filter(
-        (city) =>
-          city.name.toLowerCase().includes(q) ||
-          (city.state && city.state.toLowerCase().includes(q))
-      );
-    }
-
-    // Sort: exact matches first, then prefix matches, then alphabetical
-    countryCities.sort((a, b) => {
-      const aLower = a.name.toLowerCase();
-      const bLower = b.name.toLowerCase();
-      if (aLower === q) return -1;
-      if (bLower === q) return 1;
-      const aStarts = aLower.startsWith(q);
-      const bStarts = bLower.startsWith(q);
-      if (aStarts && !bStarts) return -1;
-      if (!aStarts && bStarts) return 1;
-      return a.name.localeCompare(b.name);
-    });
-
-    return await delay(countryCities, 120);
-  } catch (err) {
-    console.error(`Error searching cities for country ${countryId}:`, err);
-    throw new Error('Unable to load cities.');
+  if (!countryId) {
+    return [];
   }
+
+  const country = getCountryById(countryId);
+  const targetCountryId = country?.id || countryId;
+
+  try {
+    const countryName = country?.name || countryId;
+
+    // Try fetching from Supabase destinations
+    const { data, error } = await supabase
+      .from('destinations')
+      .select('*')
+      .ilike('country', `%${countryName}%`);
+
+    if (!error && data && data.length > 0) {
+      let results: CityLocation[] = (data as DestinationRow[]).map((d) => ({
+        id: d.id,
+        countryId: targetCountryId,
+        name: d.name,
+        state: d.region || '',
+        latitude: Number(d.latitude) || 0,
+        longitude: Number(d.longitude) || 0,
+      }));
+
+      const q = query.trim().toLowerCase();
+      if (q) {
+        results = results.filter((c) => c.name.toLowerCase().includes(q));
+      }
+      return results;
+    }
+  } catch (err) {
+    console.warn('[GlobeTrotter] Supabase searchCities location notice:', err);
+  }
+
+  // Fallback to local citiesData
+  let countryCities = citiesData.filter(
+    (city) => city.countryId.toLowerCase() === targetCountryId.toLowerCase()
+  );
+
+  const q = query.trim().toLowerCase();
+  if (q) {
+    countryCities = countryCities.filter(
+      (city) =>
+        city.name.toLowerCase().includes(q) ||
+        (city.state && city.state.toLowerCase().includes(q))
+    );
+  }
+
+  return countryCities;
 }
 
 /**

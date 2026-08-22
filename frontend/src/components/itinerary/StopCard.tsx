@@ -3,7 +3,7 @@ import { GripVertical, MapPin, Calendar, Trash2, Plus } from 'lucide-react';
 import type { Stop } from '@/types/stop';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { cn, formatDateShort, daysBetween, formatCurrency } from '@/lib/utils';
+import { formatDateShort, daysBetween, formatCurrency } from '@/lib/utils';
 
 interface StopCardProps {
   stop: Stop;
@@ -55,9 +55,11 @@ export function StopCard({
             </div>
             {onRemove && (
               <button
+                type="button"
                 onClick={onRemove}
-                className="p-1 rounded text-ink/30 hover:text-coral hover:bg-coral/5 transition-colors focus-ring"
-                aria-label={`Remove ${stop.city.name} from itinerary`}
+                className="p-1.5 rounded-lg text-ink/40 hover:text-coral hover:bg-coral/10 transition-colors focus-ring"
+                title={`Delete ${stop.city.name} stop`}
+                aria-label={`Remove ${stop.city.name} stop from itinerary`}
               >
                 <Trash2 className="w-4 h-4" aria-hidden />
               </button>
@@ -88,7 +90,7 @@ export function StopCard({
             {stop.activities.map((act) => (
               <li
                 key={act.id}
-                className="flex items-center justify-between gap-2 rounded-lg bg-parchment-100/60 px-3 py-2"
+                className="flex items-center justify-between gap-2 rounded-lg bg-parchment-100/60 px-3 py-2 border border-parchment-300/40 hover:border-parchment-300 transition-colors"
               >
                 <div className="min-w-0">
                   <p className="font-sans text-sm font-medium text-midnight truncate">{act.name}</p>
@@ -98,8 +100,10 @@ export function StopCard({
                 </div>
                 {onActivityRemove && (
                   <button
+                    type="button"
                     onClick={() => onActivityRemove(act.id)}
-                    className="p-1 rounded text-ink/30 hover:text-coral hover:bg-coral/5 transition-colors focus-ring shrink-0"
+                    className="p-1 rounded-md text-ink/40 hover:text-coral hover:bg-coral/10 transition-colors focus-ring shrink-0"
+                    title={`Delete ${act.name}`}
                     aria-label={`Remove ${act.name}`}
                   >
                     <Trash2 className="w-3.5 h-3.5" aria-hidden />
@@ -109,15 +113,17 @@ export function StopCard({
             ))}
           </ul>
         )}
-        <div className="flex items-center justify-between">
-          {totalActivityCost > 0 && (
+        <div className="flex items-center justify-between pt-1">
+          {totalActivityCost > 0 ? (
             <span className="ticket-mono text-xs text-ink/50">
               Activities total: {formatCurrency(totalActivityCost)}
             </span>
+          ) : (
+            <span />
           )}
           {onAddActivity && (
-            <Button variant="outline" size="sm" onClick={onAddActivity} className="ml-auto">
-              <Plus className="w-4 h-4" aria-hidden />
+            <Button variant="outline" size="sm" onClick={onAddActivity} className="ml-auto text-xs">
+              <Plus className="w-3.5 h-3.5 mr-1" aria-hidden />
               Add Activity
             </Button>
           )}

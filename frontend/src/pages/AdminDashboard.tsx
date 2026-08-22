@@ -1,34 +1,46 @@
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
-import { Users, Map, TrendingUp, Star, BarChart3 } from 'lucide-react';
+import { Users, Map, Star, BarChart3 } from 'lucide-react';
 import { getTrips } from '@/services/tripService';
-import { mockCities } from '@/data/mockCities';
-import { mockActivities } from '@/data/mockActivities';
+import { searchCities } from '@/services/citySearchService';
+import { searchActivities } from '@/services/activitySearchService';
 import { PageContainer, PageHeader } from '@/components/layout/PageContainer';
-import { Badge } from '@/components/ui/badge';
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
-import { formatCurrency } from '@/lib/utils';
 
 export default function AdminDashboard() {
-  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [totalTrips, setTotalTrips] = useState(0);
-  const [totalUsers] = useState(1248);
+  const [totalCities, setTotalCities] = useState(0);
+  const [totalActivities, setTotalActivities] = useState(0);
   const [topDestinations, setTopDestinations] = useState<{ name: string; count: number }[]>([]);
   const [popularActivities, setPopularActivities] = useState<{ name: string; popularity: number }[]>([]);
 
   useEffect(() => {
-    getTrips().then((trips) => {
+    Promise.all([
+      getTrips(),
+      searchCities(''),
+      searchActivities('', ''),
+    ]).then(([trips, cities, activities]) => {
       setTotalTrips(trips.length);
+      setTotalCities(cities.length);
+      setTotalActivities(activities.length);
+
       const cityCount: Record<string, number> = {};
-      trips.forEach((t) => t.stops.forEach((s) => { cityCount[s.city.name] = (cityCount[s.city.name] ?? 0) + 1; }));
+      trips.forEach((t) =>
+        t.stops.forEach((s) => {
+          cityCount[s.city.name] = (cityCount[s.city.name] ?? 0) + 1;
+        })
+      );
       const sorted = Object.entries(cityCount)
         .map(([name, count]) => ({ name, count }))
         .sort((a, b) => b.count - a.count)
         .slice(0, 5);
       setTopDestinations(sorted);
-      const popular = [...mockActivities].sort((a, b) => b.popularity - a.popularity).slice(0, 5).map((a) => ({ name: a.name, popularity: a.popularity }));
+
+      const popular = [...activities]
+        .sort((a, b) => b.popularity - a.popularity)
+        .slice(0, 5)
+        .map((a) => ({ name: a.name, popularity: a.popularity }));
       setPopularActivities(popular);
       setLoading(false);
     });
@@ -39,7 +51,9 @@ export default function AdminDashboard() {
       <PageContainer>
         <LoadingSkeleton className="h-10 w-48 mb-6" />
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-          {Array.from({ length: 4 }).map((_, i) => <LoadingSkeleton key={i} className="h-24 w-full" />)}
+          {Array.from({ length: 4 }).map((_, i) => (
+            <LoadingSkeleton key={i} className="h-24 w-full" />
+          ))}
         </div>
         <LoadingSkeleton className="h-64 w-full" />
       </PageContainer>
@@ -63,10 +77,10 @@ export default function AdminDashboard() {
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
         {[
-          { icon: Users, label: 'Total Users', value: totalUsers.toLocaleString(), color: 'text-teal' },
+          { icon: Users, label: 'Active Sessions', value: '1', color: 'text-teal' },
           { icon: Map, label: 'Total Trips', value: String(totalTrips), color: 'text-midnight' },
-          { icon: Map, label: 'Cities Available', value: String(mockCities.length), color: 'text-gold' },
-          { icon: Star, label: 'Activities Listed', value: String(mockActivities.length), color: 'text-coral' },
+          { icon: Map, label: 'Cities Available', value: String(totalCities), color: 'text-gold' },
+          { icon: Star, label: 'Activities Listed', value: String(totalActivities), color: 'text-coral' },
         ].map((stat, i) => (
           <motion.div
             key={stat.label}
@@ -96,115 +110,49 @@ export default function AdminDashboard() {
             <BarChart3 className="w-5 h-5 text-teal" aria-hidden /> Trip Creation (6 months)
           </h2>
           <div className="flex items-end justify-between gap-2 h-40">
-            {tripCreationData.map((d, i) => (
+            {tripCreationData.map((d) => (
               <div key={d.month} className="flex-1 flex flex-col items-center justify-end">
-                <span className="ticket-mono text-xs text-ink/50 mb-1">{d.count}</span>
-                <motion.div
-                  className="w-full rounded-t bg-teal"
-                  initial={{ height: 0 }}
-                  animate={{ height: `${(d.count / maxCount) * 100}%` }}
-                  transition={{ duration: 0.6, delay: 0.2 + i * 0.08, ease: 'easeOut' }}
-                />
-                <span className="ticket-mono text-xs text-ink/50 mt-1">{d.month}</span>
+                <div
+                  className="w-full bg-teal/20 hover:bg-teal transition-all rounded-t-md relative group"
+                  style={{ height: `${(d.count / maxCount) * 100}%` }}
+                >
+                  <span className="absolute -top-6 left-1/2 -translate-x-1/2 text-[10px] ticket-mono font-semibold text-midnight opacity-0 group-hover:opacity-100 transition-opacity">
+                    {d.count}
+                  </span>
+                </div>
+                <span className="ticket-mono text-[10px] text-ink/40 mt-2">{d.month}</span>
               </div>
             ))}
           </div>
         </motion.div>
 
-        {/* Top destinations */}
+        {/* Top Destinations */}
         <motion.div
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3, delay: 0.2 }}
           className="boarding-pass p-5"
         >
-          <h2 className="font-serif text-lg font-semibold text-midnight mb-4 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-teal" aria-hidden /> Top Destinations
-          </h2>
-          <ul className="space-y-3">
-            {topDestinations.map((dest, i) => (
-              <li key={dest.name} className="flex items-center justify-between">
-                <span className="font-sans text-sm text-midnight">
-                  <span className="ticket-mono text-xs text-ink/40 mr-2">{String(i + 1).padStart(2, '0')}</span>
-                  {dest.name}
-                </span>
-                <div className="flex items-center gap-2">
-                  <div className="w-24 h-2 rounded-full bg-midnight/5 overflow-hidden">
-                    <motion.div
-                      className="h-full rounded-full bg-gold"
-                      initial={{ width: 0 }}
-                      animate={{ width: `${(dest.count / topDestinations[0].count) * 100}%` }}
-                      transition={{ duration: 0.6, delay: 0.3 + i * 0.08 }}
-                    />
-                  </div>
-                  <span className="ticket-mono text-xs text-ink/50 w-6 text-right">{dest.count}</span>
+          <h2 className="font-serif text-lg font-semibold text-midnight mb-4">Top Destinations Planned</h2>
+          {topDestinations.length === 0 ? (
+            <p className="font-sans text-sm text-ink/50">No destination data available yet.</p>
+          ) : (
+            <div className="space-y-3">
+              {topDestinations.map((dest, i) => (
+                <div key={dest.name} className="flex items-center justify-between">
+                  <span className="font-sans text-sm text-midnight flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-midnight/5 text-midnight text-xs flex items-center justify-center font-bold">
+                      {i + 1}
+                    </span>
+                    {dest.name}
+                  </span>
+                  <span className="ticket-mono text-xs text-ink/60">{dest.count} trips</span>
                 </div>
-              </li>
-            ))}
-          </ul>
+              ))}
+            </div>
+          )}
         </motion.div>
       </div>
-
-      {/* Popular activities */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, delay: 0.25 }}
-        className="boarding-pass p-5 mb-5"
-      >
-        <h2 className="font-serif text-lg font-semibold text-midnight mb-4">Popular Activities</h2>
-        <ul className="space-y-2">
-          {popularActivities.map((act, i) => (
-            <li key={act.name} className="flex items-center justify-between rounded-lg bg-parchment-100/60 px-3 py-2">
-              <span className="font-sans text-sm text-midnight">
-                <span className="ticket-mono text-xs text-ink/40 mr-2">{String(i + 1).padStart(2, '0')}</span>
-                {act.name}
-              </span>
-              <Badge variant="gold">{act.popularity}% popular</Badge>
-            </li>
-          ))}
-        </ul>
-      </motion.div>
-
-      {/* Users table */}
-      <motion.div
-        initial={{ opacity: 0, y: 12 }}
-        animate={{ opacity: 1, y: 0 }}
-        transition={{ duration: 0.3, delay: 0.3 }}
-        className="boarding-pass overflow-hidden"
-      >
-        <div className="p-5 border-b border-parchment-300/50">
-          <h2 className="font-serif text-lg font-semibold text-midnight">Recent Users</h2>
-        </div>
-        <div className="overflow-x-auto scrollbar-thin">
-          <table className="w-full">
-            <thead className="bg-midnight/5">
-              <tr>
-                <th className="text-left font-sans text-xs font-semibold text-ink/60 uppercase tracking-wider px-4 py-3">Name</th>
-                <th className="text-left font-sans text-xs font-semibold text-ink/60 uppercase tracking-wider px-4 py-3">Email</th>
-                <th className="text-left font-sans text-xs font-semibold text-ink/60 uppercase tracking-wider px-4 py-3 hidden sm:table-cell">Trips</th>
-                <th className="text-left font-sans text-xs font-semibold text-ink/60 uppercase tracking-wider px-4 py-3 hidden sm:table-cell">Joined</th>
-              </tr>
-            </thead>
-            <tbody>
-              {[
-                { name: 'Aarav Mehta', email: 'aarav@example.com', trips: 4, joined: 'Mar 2024' },
-                { name: 'Sofia Rossi', email: 'sofia@example.com', trips: 7, joined: 'Jan 2024' },
-                { name: 'Yuki Tanaka', email: 'yuki@example.com', trips: 3, joined: 'Jun 2024' },
-                { name: 'Emma Wilson', email: 'emma@example.com', trips: 12, joined: 'Aug 2023' },
-                { name: 'Liam O\'Brien', email: 'liam@example.com', trips: 2, joined: 'Feb 2025' },
-              ].map((u, i) => (
-                <tr key={i} className="border-t border-parchment-300/40 hover:bg-parchment-100/40 transition-colors">
-                  <td className="px-4 py-3 font-sans text-sm font-medium text-midnight">{u.name}</td>
-                  <td className="px-4 py-3 font-mono text-xs text-ink/60">{u.email}</td>
-                  <td className="px-4 py-3 ticket-mono text-sm text-midnight hidden sm:table-cell">{u.trips}</td>
-                  <td className="px-4 py-3 ticket-mono text-xs text-ink/50 hidden sm:table-cell">{u.joined}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </motion.div>
     </PageContainer>
   );
 }

@@ -3,7 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { User as UserIcon, Mail, Globe, Heart, Save, Trash2, Check, Phone, MapPin, LogOut } from 'lucide-react';
 import { useAuth } from '@/contexts/AuthContext';
-import { mockCities } from '@/data/mockCities';
+import type { City } from '@/types/city';
+import { searchCities as fetchCities } from '@/services/citySearchService';
 import { PageContainer, PageHeader } from '@/components/layout/PageContainer';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -32,6 +33,11 @@ export default function Profile() {
   const [city, setCity] = useState('');
   const [country, setCountry] = useState('');
   const [language, setLanguage] = useState('English');
+  const [allCities, setAllCities] = useState<City[]>([]);
+
+  useEffect(() => {
+    fetchCities('').then(setAllCities);
+  }, []);
 
   useEffect(() => {
     if (user || profile) {
@@ -103,7 +109,7 @@ export default function Profile() {
 
   if (!user) return null;
 
-  const savedCities = mockCities.filter((c) => (user.savedDestinationIds || []).includes(c.id));
+  const savedCities = allCities.filter((c) => (user.savedDestinationIds || []).includes(c.id));
 
   return (
     <PageContainer>

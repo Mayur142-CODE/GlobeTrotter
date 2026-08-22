@@ -206,35 +206,7 @@ export default function Dashboard() {
         )}
       </section>
 
-      {/* Recommended destinations */}
-      <section>
-        <h2 className="font-serif text-xl font-semibold text-midnight mb-4">Recommended Destinations</h2>
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {[
-            { name: 'Kyoto', country: 'Japan', img: 'https://images.pexels.com/photos/161251/kyoto-japan-temple-zen-161251.jpeg?auto=compress&cs=tinysrgb&w=400' },
-            { name: 'Bali', country: 'Indonesia', img: 'https://images.pexels.com/photos/1802255/pexels-photo-1802255.jpeg?auto=compress&cs=tinysrgb&w=400' },
-            { name: 'Prague', country: 'Czechia', img: 'https://images.pexels.com/photos/2225442/pexels-photo-2225442.jpeg?auto=compress&cs=tinysrgb&w=400' },
-            { name: 'Dubai', country: 'UAE', img: 'https://images.pexels.com/photos/3787839/pexels-photo-3787839.jpeg?auto=compress&cs=tinysrgb&w=400' },
-          ].map((dest, i) => (
-            <motion.button
-              key={dest.name}
-              initial={{ opacity: 0, y: 12 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: 0.2 + i * 0.06 }}
-              whileHover={{ y: -4 }}
-              onClick={() => navigate('/search/cities')}
-              className="group relative rounded-xl overflow-hidden shadow-paper text-left focus-ring"
-            >
-              <img src={dest.img} alt={dest.name} loading="lazy" className="w-full h-32 object-cover transition-transform group-hover:scale-105" />
-              <div className="absolute inset-0 bg-gradient-to-t from-midnight/80 to-transparent" />
-              <div className="absolute bottom-2 left-3 right-3">
-                <p className="font-serif text-base font-semibold text-parchment-50">{dest.name}</p>
-                <p className="ticket-mono text-xs text-parchment-100/70">{dest.country}</p>
-              </div>
-            </motion.button>
-          ))}
-        </div>
-      </section>
+
     </PageContainer>
   );
 }

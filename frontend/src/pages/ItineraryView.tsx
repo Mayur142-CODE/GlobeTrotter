@@ -52,8 +52,7 @@ export default function ItineraryView() {
   }
 
   const days = daysBetween(trip.startDate, trip.endDate);
-  const totalActivityCost = stops.reduce((sum, s) => sum + s.activities.reduce((a, act) => a + act.price, 0), 0);
-  const totalCost = trip.budget.total + totalActivityCost;
+  const totalCost = trip.budget.total;
 
   // Build day-by-day timeline
   const dayEntries: { date: string; stop: Stop | undefined }[] = [];

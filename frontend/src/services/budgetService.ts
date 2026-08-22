@@ -1,13 +1,17 @@
 import type { BudgetBreakdown } from '@/types/budget';
 import { getTripById } from '@/data/mockTrips';
-
-const LATENCY = 400;
-
-function delay<T>(value: T): Promise<T> {
-  return new Promise((resolve) => setTimeout(() => resolve(value), LATENCY));
-}
+import { getTrip } from './tripService';
 
 export async function getBudgetBreakdown(tripId: string): Promise<BudgetBreakdown | undefined> {
-  const trip = getTripById(tripId);
-  return delay(trip ? trip.budget : undefined);
+  try {
+    const trip = await getTrip(tripId);
+    if (trip && trip.budget) {
+      return trip.budget;
+    }
+  } catch (err) {
+    console.warn('[GlobeTrotter] Supabase getBudgetBreakdown notice:', err);
+  }
+
+  const mockTrip = getTripById(tripId);
+  return mockTrip ? mockTrip.budget : undefined;
 }

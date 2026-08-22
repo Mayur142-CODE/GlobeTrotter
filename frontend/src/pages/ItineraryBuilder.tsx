@@ -1,13 +1,20 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { motion, AnimatePresence, Reorder } from 'framer-motion';
-import { PlusCircle, MapPin, Calendar, Wallet, ArrowLeft, Search, X, Clock } from 'lucide-react';
+import { motion, Reorder } from 'framer-motion';
+import { PlusCircle, MapPin, Calendar, Wallet, ArrowLeft, Search, Clock } from 'lucide-react';
 import type { Trip } from '@/types/trip';
 import type { Stop } from '@/types/stop';
 import type { City } from '@/types/city';
 import type { Activity } from '@/types/activity';
 import { getTrip } from '@/services/tripService';
-import { getStops, addStop, reorderStops, addActivityToStop, removeActivityFromStop } from '@/services/itineraryService';
+import {
+  getStops,
+  addStop,
+  deleteStop,
+  reorderStops,
+  addActivityToStop,
+  removeActivityFromStop,
+} from '@/services/itineraryService';
 import { searchCities } from '@/services/citySearchService';
 import { searchActivities } from '@/services/activitySearchService';
 import { PageContainer } from '@/components/layout/PageContainer';
@@ -15,15 +22,15 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Select } from '@/components/ui/select';
 import { Dialog, DialogHeader, DialogTitle, DialogDescription, DialogContent, DialogFooter } from '@/components/ui/dialog';
 import { StopCard } from '@/components/itinerary/StopCard';
 import { ActivityCard } from '@/components/itinerary/ActivityCard';
 import { FlightPathLine } from '@/components/itinerary/FlightPathLine';
 import { LoadingSkeleton } from '@/components/shared/LoadingSkeleton';
 import { EmptyState } from '@/components/shared/EmptyState';
+import { ConfirmDialog } from '@/components/shared/ConfirmDialog';
 import { useToast } from '@/hooks/use-toast';
-import { cn, formatCurrency, formatDateShort, daysBetween } from '@/lib/utils';
+import { formatCurrency, formatDateShort, daysBetween } from '@/lib/utils';
 
 export default function ItineraryBuilder() {
   const { tripId } = useParams<{ tripId: string }>();
@@ -34,6 +41,9 @@ export default function ItineraryBuilder() {
   const [loading, setLoading] = useState(true);
   const [addStopOpen, setAddStopOpen] = useState(false);
   const [addActivityForStop, setAddActivityForStop] = useState<Stop | null>(null);
+
+  // Stop delete confirm state
+  const [deletingStopId, setDeletingStopId] = useState<string | null>(null);
 
   const loadTrip = useCallback(async () => {
     if (!tripId) return;
@@ -64,6 +74,24 @@ export default function ItineraryBuilder() {
     setAddStopOpen(false);
   }
 
+  async function handleConfirmDeleteStop() {
+    if (!tripId || !deletingStopId) return;
+    const stopToDelete = stops.find((s) => s.id === deletingStopId);
+    try {
+      await deleteStop(tripId, deletingStopId);
+      setStops((prev) => prev.filter((s) => s.id !== deletingStopId));
+      toast({
+        title: 'Stop removed',
+        description: stopToDelete ? `${stopToDelete.city.name} removed from trip.` : 'Stop deleted.',
+        variant: 'success',
+      });
+    } catch (err: any) {
+      toast({ title: 'Delete failed', description: err?.message || 'Could not delete stop.', variant: 'error' });
+    } finally {
+      setDeletingStopId(null);
+    }
+  }
+
   async function handleAddActivity(activity: Activity, stop: Stop) {
     if (!tripId) return;
     const updated = await addActivityToStop(tripId, stop.id, activity);
@@ -77,9 +105,15 @@ export default function ItineraryBuilder() {
     if (!tripId) return;
     const stop = stops.find((s) => s.id === stopId);
     if (!stop) return;
+    const act = stop.activities.find((a) => a.id === activityId);
     const updated = await removeActivityFromStop(tripId, stopId, activityId);
     if (updated) {
       setStops((prev) => prev.map((s) => (s.id === stopId ? updated : s)));
+      toast({
+        title: 'Activity removed',
+        description: act ? `${act.name} removed from ${stop.city.name}.` : 'Activity removed.',
+        variant: 'success',
+      });
     }
   }
 
@@ -89,7 +123,8 @@ export default function ItineraryBuilder() {
         <LoadingSkeleton className="h-10 w-64 mb-6" />
         <LoadingSkeleton className="h-32 w-full mb-6" />
         <div className="space-y-4">
-          <LoadingSkeleton className="h-40 w-full" /><LoadingSkeleton className="h-40 w-full" />
+          <LoadingSkeleton className="h-40 w-full" />
+          <LoadingSkeleton className="h-40 w-full" />
         </div>
       </PageContainer>
     );
@@ -98,25 +133,42 @@ export default function ItineraryBuilder() {
   if (!trip) {
     return (
       <PageContainer>
-        <EmptyState title="Trip not found" description="This trip may have been deleted." action={<Button onClick={() => navigate('/trips')}>Back to My Trips</Button>} />
+        <EmptyState
+          title="Trip not found"
+          description="This trip may have been deleted."
+          action={<Button onClick={() => navigate('/trips')}>Back to My Trips</Button>}
+        />
       </PageContainer>
     );
   }
 
   const days = daysBetween(trip.startDate, trip.endDate);
-  const totalCost = trip.budget.total + stops.reduce((sum, s) => sum + s.activities.reduce((a, act) => a + act.price, 0), 0);
+  const totalCost = trip.budget.total;
 
   return (
     <PageContainer>
-      <button onClick={() => navigate('/trips')} className="flex items-center gap-1.5 font-sans text-sm text-ink/60 hover:text-teal mb-4 focus-ring rounded">
-        <ArrowLeft className="w-4 h-4" aria-hidden /> Back to trips
-      </button>
+      <div className="flex items-center justify-between mb-4">
+        <button
+          onClick={() => navigate('/trips')}
+          className="flex items-center gap-1.5 font-sans text-sm text-ink/60 hover:text-teal focus-ring rounded"
+        >
+          <ArrowLeft className="w-4 h-4" aria-hidden /> Back to trips
+        </button>
+        <div className="flex gap-2">
+          <Button variant="outline" size="sm" onClick={() => navigate(`/trips/${trip.id}`)}>
+            View Itinerary
+          </Button>
+          <Button variant="primary" size="sm" onClick={() => setAddStopOpen(true)}>
+            <PlusCircle className="w-4 h-4 mr-1" aria-hidden /> Add Stop
+          </Button>
+        </div>
+      </div>
 
       {/* Trip header */}
       <div className="boarding-pass overflow-hidden mb-6">
-        <div className="relative h-32">
+        <div className="relative h-40 sm:h-48">
           <img src={trip.coverPhotoUrl} alt={trip.name} className="w-full h-full object-cover" />
-          <div className="absolute inset-0 bg-gradient-to-t from-midnight/80 to-transparent" />
+          <div className="absolute inset-0 bg-gradient-to-t from-midnight/80 via-midnight/30 to-transparent" />
           <div className="absolute bottom-3 left-5 right-5">
             <h1 className="font-serif text-2xl sm:text-3xl font-semibold text-parchment-50">{trip.name}</h1>
           </div>
@@ -126,7 +178,9 @@ export default function ItineraryBuilder() {
           <div className="flex flex-wrap gap-4">
             <div className="flex items-center gap-1.5 text-sm">
               <Calendar className="w-4 h-4 text-teal" aria-hidden />
-              <span className="ticket-mono text-midnight">{formatDateShort(trip.startDate)} — {formatDateShort(trip.endDate)}</span>
+              <span className="ticket-mono text-midnight">
+                {formatDateShort(trip.startDate)} — {formatDateShort(trip.endDate)}
+              </span>
             </div>
             <div className="flex items-center gap-1.5 text-sm">
               <MapPin className="w-4 h-4 text-teal" aria-hidden />
@@ -155,9 +209,9 @@ export default function ItineraryBuilder() {
         </div>
       )}
 
-      {/* Stops */}
+      {/* Stops list with Delete Stop & Delete Activity actions */}
       <div className="flex items-center justify-between mb-4">
-        <h2 className="font-serif text-xl font-semibold text-midnight">Stops</h2>
+        <h2 className="font-serif text-xl font-semibold text-midnight">Itinerary Stops & Activities</h2>
         <Button onClick={() => setAddStopOpen(true)}>
           <PlusCircle className="w-4 h-4" aria-hidden /> Add Stop
         </Button>
@@ -166,9 +220,13 @@ export default function ItineraryBuilder() {
       {stops.length === 0 ? (
         <EmptyState
           icon={MapPin}
-          title="No stops yet"
-          description="Search for a city to add your first stop to this itinerary."
-          action={<Button onClick={() => setAddStopOpen(true)}><PlusCircle className="w-4 h-4" aria-hidden /> Add your first stop</Button>}
+          title="No stops added yet"
+          description="Add your first city stop to build your itinerary."
+          action={
+            <Button onClick={() => setAddStopOpen(true)}>
+              <PlusCircle className="w-4 h-4" aria-hidden /> Add your first stop
+            </Button>
+          }
         />
       ) : (
         <Reorder.Group axis="y" values={stops} onReorder={handleReorder} className="space-y-4">
@@ -178,6 +236,7 @@ export default function ItineraryBuilder() {
                 stop={stop}
                 index={i}
                 draggable
+                onRemove={() => setDeletingStopId(stop.id)}
                 onAddActivity={() => setAddActivityForStop(stop)}
                 onActivityRemove={(actId) => handleRemoveActivity(stop.id, actId)}
               />
@@ -197,11 +256,30 @@ export default function ItineraryBuilder() {
           if (addActivityForStop) handleAddActivity(activity, addActivityForStop);
         }}
       />
+
+      {/* Confirm Delete Stop Modal */}
+      <ConfirmDialog
+        open={!!deletingStopId}
+        onClose={() => setDeletingStopId(null)}
+        onConfirm={handleConfirmDeleteStop}
+        title="Delete Stop"
+        description="Are you sure you want to delete this stop and all its scheduled activities from your itinerary?"
+        confirmText="Delete Stop"
+        variant="danger"
+      />
     </PageContainer>
   );
 }
 
-function AddStopDialog({ open, onClose, onAdd }: { open: boolean; onClose: () => void; onAdd: (city: City, start: string, end: string) => void }) {
+function AddStopDialog({
+  open,
+  onClose,
+  onAdd,
+}: {
+  open: boolean;
+  onClose: () => void;
+  onAdd: (city: City, start: string, end: string) => void;
+}) {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<City[]>([]);
   const [searching, setSearching] = useState(false);
@@ -212,7 +290,12 @@ function AddStopDialog({ open, onClose, onAdd }: { open: boolean; onClose: () =>
 
   useEffect(() => {
     if (!open) {
-      setQuery(''); setSelected(null); setStartDate(''); setEndDate(''); setError(''); setResults([]);
+      setQuery('');
+      setSelected(null);
+      setStartDate('');
+      setEndDate('');
+      setError('');
+      setResults([]);
     }
   }, [open]);
 
@@ -222,157 +305,178 @@ function AddStopDialog({ open, onClose, onAdd }: { open: boolean; onClose: () =>
       return;
     }
     setSearching(true);
-    const t = setTimeout(() => {
-      searchCities(query).then((r) => { setResults(r); setSearching(false); });
-    }, 300);
-    return () => clearTimeout(t);
+    searchCities(query).then((res) => {
+      setResults(res);
+      setSearching(false);
+    });
   }, [query]);
 
-  function handleConfirm() {
-    if (!selected) { setError('Please select a city'); return; }
-    if (!startDate || !endDate) { setError('Please select dates'); return; }
-    if (new Date(endDate) < new Date(startDate)) { setError('End date must be after start date'); return; }
+  function handleAdd() {
+    if (!selected) {
+      setError('Please select a city.');
+      return;
+    }
+    if (!startDate || !endDate) {
+      setError('Please select start and end dates.');
+      return;
+    }
+    if (new Date(endDate) < new Date(startDate)) {
+      setError('End date must be after start date.');
+      return;
+    }
     onAdd(selected, startDate, endDate);
   }
 
   return (
-    <Dialog open={open} onClose={onClose} className="max-w-lg" labelledBy="add-stop-title">
-      <DialogHeader>
-        <DialogTitle id="add-stop-title">Add a Stop</DialogTitle>
-        <DialogDescription>Search for a city and select your dates.</DialogDescription>
-      </DialogHeader>
-      <DialogContent>
-        {!selected ? (
-          <>
-            <div className="relative mb-3">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/40" aria-hidden />
-              <Input
-                value={query}
-                onChange={(e) => setQuery(e.target.value)}
-                placeholder="Search cities…"
-                className="pl-10"
-                autoFocus
-                aria-label="Search cities"
-              />
-            </div>
-            {searching && <p className="font-sans text-sm text-ink/50 text-center py-4">Searching…</p>}
-            <div className="max-h-64 overflow-y-auto scrollbar-thin space-y-2">
-              {results.map((city) => (
-                <button
-                  key={city.id}
-                  onClick={() => setSelected(city)}
-                  className="w-full flex items-center gap-3 rounded-lg border border-parchment-300/60 p-2.5 hover:border-teal hover:bg-teal/5 transition-colors text-left focus-ring"
-                >
-                  <img src={city.imageUrl} alt={city.name} loading="lazy" className="w-12 h-12 rounded-lg object-cover shrink-0" />
-                  <div className="min-w-0">
-                    <p className="font-serif text-sm font-semibold text-midnight">{city.name}</p>
-                    <p className="font-sans text-xs text-ink/50">{city.country} · Cost index {city.costIndex}</p>
-                  </div>
-                </button>
-              ))}
-              {query && !searching && results.length === 0 && (
-                <p className="font-sans text-sm text-ink/40 text-center py-4">No cities found for "{query}"</p>
+    <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Add a Stop</DialogTitle>
+          <DialogDescription>Search for a city to add to your itinerary.</DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          {!selected ? (
+            <div>
+              <Label htmlFor="search-city">Search City</Label>
+              <div className="relative mt-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/40" />
+                <Input
+                  id="search-city"
+                  value={query}
+                  onChange={(e) => setQuery(e.target.value)}
+                  placeholder="e.g. Paris, Tokyo, Mumbai…"
+                  className="pl-10"
+                />
+              </div>
+              {searching && <p className="font-sans text-xs text-ink/50 mt-2">Searching cities…</p>}
+              {results.length > 0 && (
+                <ul className="mt-2 border border-parchment-300 rounded-lg max-h-48 overflow-y-auto divide-y divide-parchment-200 bg-parchment-50">
+                  {results.map((c) => (
+                    <li key={c.id}>
+                      <button
+                        type="button"
+                        onClick={() => setSelected(c)}
+                        className="w-full text-left px-3 py-2 hover:bg-parchment-200/60 transition-colors flex items-center justify-between"
+                      >
+                        <span className="font-sans text-sm font-medium text-midnight">{c.name}</span>
+                        <span className="ticket-mono text-xs text-ink/50">{c.country}</span>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
               )}
             </div>
-          </>
-        ) : (
-          <div className="space-y-4">
-            <div className="flex items-center gap-3 rounded-lg bg-teal/5 p-3">
-              <img src={selected.imageUrl} alt={selected.name} className="w-14 h-14 rounded-lg object-cover" />
-              <div className="flex-1">
-                <p className="font-serif text-base font-semibold text-midnight">{selected.name}</p>
-                <p className="font-sans text-sm text-ink/60">{selected.country}</p>
+          ) : (
+            <div className="p-3 rounded-lg bg-teal/10 border border-teal/20 flex items-center justify-between">
+              <div>
+                <p className="font-serif text-sm font-semibold text-midnight">{selected.name}</p>
+                <p className="ticket-mono text-xs text-ink/60">{selected.country}</p>
               </div>
-              <button onClick={() => setSelected(null)} className="p-1.5 rounded-lg text-ink/40 hover:text-coral hover:bg-coral/5 focus-ring" aria-label="Change city">
-                <X className="w-4 h-4" aria-hidden />
-              </button>
+              <Button variant="ghost" size="sm" onClick={() => setSelected(null)}>
+                Change
+              </Button>
             </div>
+          )}
+
+          {selected && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <Label htmlFor="stop-start">Arrival Date</Label>
-                <Input id="stop-start" type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+                <Label htmlFor="stop-start">Start Date</Label>
+                <Input
+                  id="stop-start"
+                  type="date"
+                  value={startDate}
+                  onChange={(e) => setStartDate(e.target.value)}
+                />
               </div>
               <div>
-                <Label htmlFor="stop-end">Departure Date</Label>
-                <Input id="stop-end" type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
+                <Label htmlFor="stop-end">End Date</Label>
+                <Input
+                  id="stop-end"
+                  type="date"
+                  value={endDate}
+                  onChange={(e) => setEndDate(e.target.value)}
+                />
               </div>
             </div>
-          </div>
-        )}
-        {error && <p className="font-sans text-xs text-coral mt-3">{error}</p>}
+          )}
+
+          {error && <p className="font-sans text-xs text-coral">{error}</p>}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button disabled={!selected} onClick={handleAdd}>
+            Add Stop
+          </Button>
+        </DialogFooter>
       </DialogContent>
-      <DialogFooter>
-        <Button variant="outline" onClick={onClose}>Cancel</Button>
-        {selected && <Button onClick={handleConfirm}>Add to itinerary</Button>}
-      </DialogFooter>
     </Dialog>
   );
 }
 
-function AddActivityDialog({ stop, onClose, onAdd }: { stop: Stop | null; onClose: () => void; onAdd: (a: Activity) => void }) {
-  const [query, setQuery] = useState('');
-  const [results, setResults] = useState<Activity[]>([]);
+function AddActivityDialog({
+  stop,
+  onClose,
+  onAdd,
+}: {
+  stop: Stop | null;
+  onClose: () => void;
+  onAdd: (activity: Activity) => void;
+}) {
+  const [activities, setActivities] = useState<Activity[]>([]);
   const [loading, setLoading] = useState(false);
-  const [category, setCategory] = useState<string>('All');
 
   useEffect(() => {
-    if (!stop) return;
+    if (!stop) {
+      setActivities([]);
+      return;
+    }
     setLoading(true);
-    searchActivities(stop.cityId, query, { category: category as 'All' | undefined }).then((r) => {
-      setResults(r);
+    searchActivities(stop.cityId, '').then((res) => {
+      setActivities(res);
       setLoading(false);
     });
-  }, [stop, query, category]);
+  }, [stop]);
 
   if (!stop) return null;
-  const existingIds = new Set(stop.activities.map((a) => a.id));
 
   return (
-    <Dialog open={!!stop} onClose={onClose} className="max-w-2xl" labelledBy="add-activity-title">
-      <DialogHeader>
-        <DialogTitle id="add-activity-title">Add Activity — {stop.city.name}</DialogTitle>
-        <DialogDescription>Browse and add experiences to this stop.</DialogDescription>
-      </DialogHeader>
-      <DialogContent>
-        <div className="flex flex-col sm:flex-row gap-3 mb-4">
-          <div className="relative flex-1">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-ink/40" aria-hidden />
-            <Input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search activities…" className="pl-10" aria-label="Search activities" />
-          </div>
-          <Select value={category} onChange={(e) => setCategory(e.target.value)} className="sm:w-44" aria-label="Filter by category">
-            <option value="All">All Categories</option>
-            <option value="Sightseeing">Sightseeing</option>
-            <option value="Food & Drink">Food & Drink</option>
-            <option value="Adventure">Adventure</option>
-            <option value="Culture">Culture</option>
-            <option value="Nature">Nature</option>
-            <option value="Nightlife">Nightlife</option>
-            <option value="Relaxation">Relaxation</option>
-          </Select>
+    <Dialog open={!!stop} onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-xl max-h-[85vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>Add Activity to {stop.city.name}</DialogTitle>
+          <DialogDescription>Select experiences to add to this stop.</DialogDescription>
+        </DialogHeader>
+        <div className="flex-1 overflow-y-auto space-y-3 py-2">
+          {loading ? (
+            <p className="font-sans text-sm text-ink/50 text-center py-4">Loading activities…</p>
+          ) : activities.length === 0 ? (
+            <EmptyState
+              title="No activities available"
+              description={`No activities listed for ${stop.city.name} yet.`}
+            />
+          ) : (
+            activities.map((act) => {
+              const added = stop.activities.some((a) => a.id === act.id);
+              return (
+                <ActivityCard
+                  key={act.id}
+                  activity={act}
+                  added={added}
+                  onAdd={() => onAdd(act)}
+                />
+              );
+            })
+          )}
         </div>
-        {loading ? (
-          <div className="space-y-3">
-            <LoadingSkeleton className="h-24 w-full" /><LoadingSkeleton className="h-24 w-full" />
-          </div>
-        ) : results.length === 0 ? (
-          <p className="font-sans text-sm text-ink/40 text-center py-6">No activities found.</p>
-        ) : (
-          <div className="max-h-96 overflow-y-auto scrollbar-thin space-y-3">
-            {results.map((act, i) => (
-              <ActivityCard
-                key={act.id}
-                activity={act}
-                index={i}
-                added={existingIds.has(act.id)}
-                onAdd={() => onAdd(act)}
-              />
-            ))}
-          </div>
-        )}
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Done
+          </Button>
+        </DialogFooter>
       </DialogContent>
-      <DialogFooter>
-        <Button variant="outline" onClick={onClose}>Done</Button>
-      </DialogFooter>
     </Dialog>
   );
 }
